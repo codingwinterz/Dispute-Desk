@@ -126,8 +126,13 @@ class DisputesClient:
 
     @staticmethod
     def has_link(dispute: dict[str, Any], rel: str) -> bool:
-        """True if the dispute's HATEOAS links offer the given action (e.g. "adjudicate")."""
-        return any(link.get("rel") == rel for link in dispute.get("links", []))
+        """True if the dispute's HATEOAS links offer the given action (e.g. "adjudicate").
+
+        The docs name links like "require-evidence"; whether real responses use "-" or "_"
+        is UNVERIFIED, so both spellings match.
+        """
+        want = rel.replace("_", "-")
+        return any(str(link.get("rel", "")).replace("_", "-") == want for link in dispute.get("links", []))
 
     def _request(self, method: str, path: str, *, dispute_id: str, action: str, **kwargs: Any) -> httpx.Response:
         for attempt in (1, 2):
