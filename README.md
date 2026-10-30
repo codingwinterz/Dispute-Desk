@@ -32,7 +32,7 @@ cp .env.example .env    # then fill in the values; never commit .env
 
 ## Running the sandbox check
 
-1. Start the receiver: `.venv/Scripts/python -m uvicorn disputedesk.webhooks:app --port 8000`
+1. Start the receiver: `.venv/Scripts/python -m uvicorn --factory disputedesk.webhooks:create_app --port 8000`
 2. Expose it: `ngrok http 8000`
 3. In the developer dashboard, add a webhook to your sandbox app pointing at
    `https://<ngrok-host>/webhooks/paypal` and subscribe to `CUSTOMER.DISPUTE.*`.
