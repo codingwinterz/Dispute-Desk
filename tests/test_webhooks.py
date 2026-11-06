@@ -173,15 +173,17 @@ def test_webhook_dispute_emits_dispute_detected(paypal, client, dispute_store, d
 def test_webhook_then_poll_processes_dispute_once(paypal, client, settings, http, dispute_store, bus, detected, tmp_path):
     verified(paypal)
     paypal.get(DISPUTES_URL).mock(return_value=httpx.Response(200, json={"items": [{"dispute_id": "PP-D-1"}]}))
-    get_one = paypal.get(f"{DISPUTES_URL}/PP-D-1")
+    get_one = paypal.get(f"{DISPUTES_URL}/PP-D-1").mock(
+        return_value=httpx.Response(200, json={"dispute_id": "PP-D-1", "status": "OPEN"}))
     poller = DisputePoller(DisputesClient(settings, TokenProvider(settings, http), http),
                            dispute_store, bus, tmp_path / "disputes", interval=10)
 
     post(client, event())
     poller.poll_once()
+    poller.poll_once()
 
-    assert detected == [DisputeDetected("PP-D-1", "webhook")]
-    assert not get_one.called
+    assert detected == [DisputeDetected("PP-D-1", "webhook")]  # no second event from the poll
+    assert get_one.call_count == 1  # fetched once to backfill the full details
 
 
 def test_poll_then_webhook_processes_dispute_once(paypal, client, dispute_store, detected):
@@ -216,3 +218,26 @@ def test_app_lifespan_starts_and_stops_poller(settings, store, dispute_store, bu
     with TestClient(app):
         assert calls == ["started"]
     assert calls == ["started", "stopped"]
+
+
+def test_webhook_arriving_while_poll_fetches_wins_once(paypal, client, settings, http, dispute_store, bus, detected, tmp_path):
+    """Race: the poller has seen PP-D-1 as new and is fetching it when the webhook lands."""
+    verified(paypal)
+    paypal.get(DISPUTES_URL).mock(return_value=httpx.Response(200, json={"items": [{"dispute_id": "PP-D-1"}]}))
+    full = {"dispute_id": "PP-D-1", "status": "WAITING_FOR_SELLER_RESPONSE", "dispute_life_cycle_stage": "CHARGEBACK"}
+
+    def webhook_lands_mid_fetch(request):
+        assert post(client, event()).json() == {"status": "ok"}
+        return httpx.Response(200, json=full)
+
+    paypal.get(f"{DISPUTES_URL}/PP-D-1").mock(side_effect=webhook_lands_mid_fetch)
+    poller = DisputePoller(DisputesClient(settings, TokenProvider(settings, http), http),
+                           dispute_store, bus, tmp_path / "disputes", interval=10)
+
+    poller.poll_once()
+
+    assert detected == [DisputeDetected("PP-D-1", "webhook")]  # exactly one event
+    [row] = dispute_store.summaries()
+    assert row["source"] == "webhook"
+    assert row["stage"] == "CHARGEBACK"  # poll's full data kept
+    assert not dispute_store.needs_full("PP-D-1")

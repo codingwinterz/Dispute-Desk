@@ -16,6 +16,8 @@ from disputedesk.config import Settings
 log = logging.getLogger("disputedesk.disputes")
 
 DOC = "https://developer.paypal.com/docs/api/customer-disputes/v1/"
+# Upper bound on list pages per poll, so a bad "next" link can never loop forever.
+MAX_PAGES = 20
 
 
 class DisputesClient:
@@ -28,16 +30,49 @@ class DisputesClient:
 
     # --- reads -------------------------------------------------------------
 
-    def list_disputes(self, page_size: int = 50) -> list[dict[str, Any]]:
+    def list_disputes(self, page_size: int = 50, max_pages: int = MAX_PAGES) -> list[dict[str, Any]]:
         # GET /v1/customer/disputes ("List disputes"). Response: {"items": [...], "links": [...]}.
+        # Query params page_size and next_page_token; when more pages exist the response has a
+        # link with rel "next".
         # https://developer.paypal.com/docs/api/customer-disputes/v1/#disputes_list
-        # UNVERIFIED: page_size maximum of 50 and the item sort order. Only the first page is read,
-        # so with more than page_size disputes some may not be seen.
-        resp = self._request("GET", "", dispute_id="-", action="list", params={"page_size": page_size})
-        if resp.is_error:
-            self._log("-", "list", resp.status_code)
-            resp.raise_for_status()
-        return resp.json().get("items") or []
+        # UNVERIFIED: the page_size maximum (50), and that the "next" link's href carries the
+        # next_page_token query param. The 4 real sandbox disputes fit on one page, so paging has
+        # only been exercised against mocked responses.
+        items: list[dict[str, Any]] = []
+        params: dict[str, str] = {"page_size": str(page_size)}
+        seen_params: list[dict[str, str]] = []
+        for _ in range(max_pages):
+            resp = self._request("GET", "", dispute_id="-", action="list", params=params)
+            if resp.is_error:
+                self._log("-", "list", resp.status_code)
+                resp.raise_for_status()
+            body = resp.json()
+            items.extend(body.get("items") or [])
+            seen_params.append(params)
+            next_params = self._next_page_params(body)
+            if next_params is None:
+                return items
+            if next_params in seen_params:
+                log.warning("list disputes: next link repeats an earlier page; stopping")
+                return items
+            params = next_params
+        log.warning("list disputes: stopped after %d pages", max_pages)
+        return items
+
+    def _next_page_params(self, body: dict[str, Any]) -> dict[str, str] | None:
+        for link in body.get("links") or []:
+            if not isinstance(link, dict) or link.get("rel") != "next" or not link.get("href"):
+                continue
+            url = httpx.URL(link["href"])
+            base = httpx.URL(self._base)
+            # Only follow a link back to the same sandbox list endpoint, so the bearer token is
+            # never sent anywhere else. Its query params (e.g. next_page_token) are reused.
+            if (url.scheme, url.host, url.path.rstrip("/")) != (base.scheme, base.host, base.path):
+                log.warning("list disputes: ignored next link to a different endpoint")
+                return None
+            params = dict(url.params)
+            return params or None
+        return None
 
     def get_dispute(self, dispute_id: str) -> dict[str, Any]:
         # GET /v1/customer/disputes/{id}

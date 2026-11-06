@@ -77,7 +77,7 @@ def test_duplicate_is_ignored(paypal, poller, store, events):
     paypal.get(DISPUTES_URL).mock(return_value=page("PP-D-1", "PP-D-2"))
     get_1 = paypal.get(f"{DISPUTES_URL}/PP-D-1").mock(return_value=detail("PP-D-1"))
     get_2 = paypal.get(f"{DISPUTES_URL}/PP-D-2").mock(return_value=detail("PP-D-2"))
-    store.claim("PP-D-2", "webhook", {"dispute_id": "PP-D-2"}, full=False)  # already processed via the webhook path
+    store.claim("PP-D-2", "webhook", {"dispute_id": "PP-D-2"}, full=True)  # already fully processed
 
     poller.poll_once()
     poller.poll_once()  # second poll returns the same IDs
@@ -159,3 +159,74 @@ def test_token_not_in_logs(paypal, poller, caplog):
 
     assert "poll ok count=0" in caplog.text
     assert "super-secret-token" not in caplog.text
+
+
+def test_pagination_follows_next_link(paypal, poller, events, caplog):
+    next_href = f"{DISPUTES_URL}?page_size=50&next_page_token=TOKEN-2"
+    first = httpx.Response(200, json={
+        "items": [{"dispute_id": "PP-D-1"}],
+        "links": [{"rel": "self", "href": DISPUTES_URL, "method": "GET"},
+                  {"rel": "next", "href": next_href, "method": "GET"}],
+    })
+    listing = paypal.get(DISPUTES_URL).mock(side_effect=[first, page("PP-D-2")])
+    paypal.get(f"{DISPUTES_URL}/PP-D-1").mock(return_value=detail("PP-D-1"))
+    paypal.get(f"{DISPUTES_URL}/PP-D-2").mock(return_value=detail("PP-D-2"))
+
+    with caplog.at_level("INFO"):
+        assert poller.poll_once() == INTERVAL
+
+    assert listing.call_count == 2
+    assert listing.calls[1].request.url.params["next_page_token"] == "TOKEN-2"
+    assert events == [DisputeDetected("PP-D-1", "poll"), DisputeDetected("PP-D-2", "poll")]
+    assert "poll ok count=2 new=2" in caplog.text
+
+
+def test_pagination_ignores_next_link_to_other_host(paypal, poller, events):
+    first = httpx.Response(200, json={
+        "items": [{"dispute_id": "PP-D-1"}],
+        "links": [{"rel": "next", "href": "https://evil.example/v1/customer/disputes?next_page_token=x"}],
+    })
+    listing = paypal.get(DISPUTES_URL).mock(return_value=first)
+    paypal.get(f"{DISPUTES_URL}/PP-D-1").mock(return_value=detail("PP-D-1"))
+
+    poller.poll_once()
+
+    assert listing.call_count == 1
+    assert all(c.request.url.host == "api-m.sandbox.paypal.com" for c in paypal.calls)
+
+
+def test_pagination_stops_on_repeating_next_link(paypal, poller):
+    looping = httpx.Response(200, json={
+        "items": [],
+        "links": [{"rel": "next", "href": f"{DISPUTES_URL}?next_page_token=SAME"}],
+    })
+    listing = paypal.get(DISPUTES_URL).mock(return_value=looping)
+
+    assert poller.poll_once() == INTERVAL
+    assert listing.call_count == 2  # first page, then the token page once
+
+
+def test_poll_log_counts_new_ids(paypal, poller, store, caplog):
+    store.claim("PP-D-1", "poll", {"dispute_id": "PP-D-1"}, full=True)
+    paypal.get(DISPUTES_URL).mock(return_value=page("PP-D-1", "PP-D-2"))
+    paypal.get(f"{DISPUTES_URL}/PP-D-2").mock(return_value=detail("PP-D-2"))
+
+    with caplog.at_level("INFO"):
+        poller.poll_once()
+
+    assert "poll ok count=2 new=1" in caplog.text
+
+
+def test_webhook_first_dispute_is_backfilled_without_new_event(paypal, poller, store, events, tmp_path):
+    store.claim("PP-D-1", "webhook", {"dispute_id": "PP-D-1", "status": "OPEN"}, full=False)
+    paypal.get(DISPUTES_URL).mock(return_value=page("PP-D-1"))
+    get_one = paypal.get(f"{DISPUTES_URL}/PP-D-1").mock(return_value=detail("PP-D-1"))
+
+    poller.poll_once()
+    poller.poll_once()
+
+    assert get_one.call_count == 1  # fetched once to backfill, then not again
+    assert events == []
+    assert not store.needs_full("PP-D-1")
+    assert store.source_of("PP-D-1") == "webhook"
+    assert (tmp_path / "disputes" / "PP-D-1.json").exists()
