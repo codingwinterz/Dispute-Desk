@@ -49,7 +49,7 @@ def store(tmp_path):
 
 @pytest.fixture
 def dispute_store(tmp_path):
-    s = DisputeStore(tmp_path / "disputes.sqlite3")
+    s = DisputeStore(tmp_path / "disputedesk.db")
     yield s
     s.close()
 
@@ -186,7 +186,7 @@ def test_webhook_then_poll_processes_dispute_once(paypal, client, settings, http
 
 def test_poll_then_webhook_processes_dispute_once(paypal, client, dispute_store, detected):
     verified(paypal)
-    dispute_store.claim("PP-D-1", "poll")
+    dispute_store.claim("PP-D-1", "poll", {"dispute_id": "PP-D-1"}, full=True)
 
     resp = post(client, event("WH-EVT-2"))
 

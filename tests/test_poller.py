@@ -77,7 +77,7 @@ def test_duplicate_is_ignored(paypal, poller, store, events):
     paypal.get(DISPUTES_URL).mock(return_value=page("PP-D-1", "PP-D-2"))
     get_1 = paypal.get(f"{DISPUTES_URL}/PP-D-1").mock(return_value=detail("PP-D-1"))
     get_2 = paypal.get(f"{DISPUTES_URL}/PP-D-2").mock(return_value=detail("PP-D-2"))
-    store.claim("PP-D-2", "webhook")  # already processed via the webhook path
+    store.claim("PP-D-2", "webhook", {"dispute_id": "PP-D-2"}, full=False)  # already processed via the webhook path
 
     poller.poll_once()
     poller.poll_once()  # second poll returns the same IDs

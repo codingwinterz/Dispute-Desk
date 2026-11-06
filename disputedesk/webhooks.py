@@ -21,7 +21,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from disputedesk.auth import TokenProvider
-from disputedesk.config import LOG_DIR, Settings, load_settings
+from disputedesk.config import DISPUTE_DB, LOG_DIR, Settings, load_settings
 from disputedesk.dispute_store import DisputeStore, safe_filename
 from disputedesk.disputes import DisputesClient
 from disputedesk.events import DisputeDetected, EventBus
@@ -126,7 +126,7 @@ def create_app(
         http = make_client(LOG_DIR / "webhook_http.jsonl", secrets)
         verifier = PayPalSignatureVerifier(settings, TokenProvider(settings, http), http)
     store = store or EventStore(LOG_DIR)
-    dispute_store = dispute_store or DisputeStore(store.root / "disputes.sqlite3")
+    dispute_store = dispute_store or DisputeStore(DISPUTE_DB)
     bus = bus or EventBus()
     if poller is None and settings is not None:
         poll_http = make_client(LOG_DIR / "poll_http.jsonl", secrets)
@@ -164,11 +164,14 @@ def _detect_from_webhook(event: dict[str, Any], dispute_store: DisputeStore, bus
     # UNVERIFIED: that resource.dispute_id is present on every CUSTOMER.DISPUTE.* event.
     if not str(event.get("event_type", "")).startswith("CUSTOMER.DISPUTE."):
         return
-    dispute_id = (event.get("resource") or {}).get("dispute_id")
+    resource = event.get("resource") or {}
+    dispute_id = resource.get("dispute_id") if isinstance(resource, dict) else None
     if not dispute_id:
         return
     try:
-        if dispute_store.claim(dispute_id, "webhook"):
+        # The resource is stored as a snapshot; the poller later replaces it with the full GET
+        # response (full=False marks it as not yet fetched).
+        if dispute_store.claim(dispute_id, "webhook", resource, full=False):
             bus.emit(DisputeDetected(dispute_id, "webhook"))
         else:
             log.info("dispute=%s already processed via %s; not emitted again",

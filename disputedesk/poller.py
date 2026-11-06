@@ -87,7 +87,7 @@ class DisputePoller:
             log.warning("could not fetch dispute=%s: HTTP %s; retrying next poll",
                         dispute_id, exc.response.status_code)
             return
-        if not self._store.claim(dispute_id, "poll"):
+        if not self._store.claim(dispute_id, "poll", dispute, full=True):
             log.info("dispute=%s already processed via %s; skipped", dispute_id, self._store.source_of(dispute_id))
             return
         self._disputes_dir.mkdir(parents=True, exist_ok=True)
