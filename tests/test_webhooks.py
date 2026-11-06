@@ -6,8 +6,15 @@ import respx
 from fastapi.testclient import TestClient
 
 from disputedesk.auth import TokenProvider
+from disputedesk.config import SANDBOX_BASE_URL
+from disputedesk.dispute_store import DisputeStore
+from disputedesk.disputes import DisputesClient
+from disputedesk.events import DisputeDetected, EventBus
+from disputedesk.poller import DisputePoller
 from disputedesk.webhooks import EventStore, PayPalSignatureVerifier, create_app
 from tests.conftest import TOKEN_URL, VERIFY_URL
+
+DISPUTES_URL = f"{SANDBOX_BASE_URL}/v1/customer/disputes"
 
 SIG_HEADERS = {
     "PAYPAL-AUTH-ALGO": "SHA256withRSA",
@@ -41,9 +48,28 @@ def store(tmp_path):
 
 
 @pytest.fixture
-def client(settings, http, store):
+def dispute_store(tmp_path):
+    s = DisputeStore(tmp_path / "disputes.sqlite3")
+    yield s
+    s.close()
+
+
+@pytest.fixture
+def detected():
+    return []
+
+
+@pytest.fixture
+def bus(detected):
+    b = EventBus()
+    b.subscribe(detected.append)
+    return b
+
+
+@pytest.fixture
+def client(settings, http, store, dispute_store, bus):
     verifier = PayPalSignatureVerifier(settings, TokenProvider(settings, http), http)
-    return TestClient(create_app(verifier=verifier, store=store))
+    return TestClient(create_app(verifier=verifier, store=store, dispute_store=dispute_store, bus=bus))
 
 
 def post(client, body: dict, headers=SIG_HEADERS):
@@ -129,3 +155,64 @@ def test_dedupe_survives_restart(tmp_path):
 
     assert restarted.seen("WH-EVT-9")
     assert restarted.claim("WH-EVT-9", b"{}") is False
+
+
+def verified(paypal):
+    paypal.post(VERIFY_URL).mock(return_value=httpx.Response(200, json={"verification_status": "SUCCESS"}))
+
+
+def test_webhook_dispute_emits_dispute_detected(paypal, client, dispute_store, detected):
+    verified(paypal)
+
+    post(client, event())
+
+    assert detected == [DisputeDetected("PP-D-1", "webhook")]
+    assert dispute_store.source_of("PP-D-1") == "webhook"
+
+
+def test_webhook_then_poll_processes_dispute_once(paypal, client, settings, http, dispute_store, bus, detected, tmp_path):
+    verified(paypal)
+    paypal.get(DISPUTES_URL).mock(return_value=httpx.Response(200, json={"items": [{"dispute_id": "PP-D-1"}]}))
+    get_one = paypal.get(f"{DISPUTES_URL}/PP-D-1")
+    poller = DisputePoller(DisputesClient(settings, TokenProvider(settings, http), http),
+                           dispute_store, bus, tmp_path / "disputes", interval=10)
+
+    post(client, event())
+    poller.poll_once()
+
+    assert detected == [DisputeDetected("PP-D-1", "webhook")]
+    assert not get_one.called
+
+
+def test_poll_then_webhook_processes_dispute_once(paypal, client, dispute_store, detected):
+    verified(paypal)
+    dispute_store.claim("PP-D-1", "poll")
+
+    resp = post(client, event("WH-EVT-2"))
+
+    assert resp.json() == {"status": "ok"}
+    assert detected == []
+
+
+def test_non_dispute_webhook_emits_nothing(paypal, client, detected):
+    verified(paypal)
+    body = {"id": "WH-EVT-3", "event_type": "PAYMENT.CAPTURE.COMPLETED", "resource": {"id": "CAP-1"}}
+
+    post(client, body)
+
+    assert detected == []
+
+
+def test_app_lifespan_starts_and_stops_poller(settings, store, dispute_store, bus):
+    calls = []
+
+    class FakePoller:
+        async def run(self, stop):
+            calls.append("started")
+            await stop.wait()
+            calls.append("stopped")
+
+    app = create_app(verifier=object(), store=store, dispute_store=dispute_store, bus=bus, poller=FakePoller())
+    with TestClient(app):
+        assert calls == ["started"]
+    assert calls == ["started", "stopped"]

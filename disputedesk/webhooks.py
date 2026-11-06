@@ -1,11 +1,17 @@
 """PayPal webhook receiver: POST /webhooks/paypal.
 
 Run with:  uvicorn --factory disputedesk.webhooks:create_app --port 8000
+
+The app also starts the dispute poller (disputedesk.poller) as a background task. Disputes seen
+through either path go through one DisputeStore, so dispute_detected is emitted once per dispute.
 """
 
+import asyncio
 import json
 import logging
 import threading
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -16,7 +22,11 @@ from fastapi.responses import JSONResponse
 
 from disputedesk.auth import TokenProvider
 from disputedesk.config import LOG_DIR, Settings, load_settings
+from disputedesk.dispute_store import DisputeStore, safe_filename
+from disputedesk.disputes import DisputesClient
+from disputedesk.events import DisputeDetected, EventBus
 from disputedesk.http_log import make_client
+from disputedesk.poller import DisputePoller
 
 log = logging.getLogger("disputedesk.webhooks")
 
@@ -67,6 +77,7 @@ class EventStore:
     """Deduplicates by event id and keeps the raw body of each new event in logs/events/."""
 
     def __init__(self, root: Path):
+        self.root = root
         self.events_dir = root / "events"
         self.seen_file = root / "webhook_seen_ids.txt"
         self.events_dir.mkdir(parents=True, exist_ok=True)
@@ -87,12 +98,8 @@ class EventStore:
             self._seen.add(event_id)
             with self.seen_file.open("a", encoding="utf-8") as fh:
                 fh.write(event_id + "\n")
-        (self.events_dir / f"{_safe_name(event_id)}.json").write_bytes(raw)
+        (self.events_dir / f"{safe_filename(event_id)}.json").write_bytes(raw)
         return True
-
-
-def _safe_name(event_id: str) -> str:
-    return "".join(c if c.isalnum() or c in "-_" else "_" for c in event_id)
 
 
 def _dispute_state(event: dict[str, Any]) -> str:
@@ -103,25 +110,81 @@ def _dispute_state(event: dict[str, Any]) -> str:
     )
 
 
-def create_app(verifier: Verifier | None = None, store: EventStore | None = None) -> FastAPI:
+def create_app(
+    verifier: Verifier | None = None,
+    store: EventStore | None = None,
+    dispute_store: DisputeStore | None = None,
+    bus: EventBus | None = None,
+    poller: DisputePoller | None = None,
+) -> FastAPI:
+    """Build the app. With no verifier, settings come from the environment and the real
+    poller is started; tests inject their own pieces and get no poller unless they pass one."""
+    settings: Settings | None = None
     if verifier is None:
         settings = load_settings()
-        http = make_client(LOG_DIR / "webhook_http.jsonl", (settings.client_id, settings.client_secret))
+        secrets = (settings.client_id, settings.client_secret)
+        http = make_client(LOG_DIR / "webhook_http.jsonl", secrets)
         verifier = PayPalSignatureVerifier(settings, TokenProvider(settings, http), http)
     store = store or EventStore(LOG_DIR)
-    app = FastAPI(title="DisputeDesk webhook receiver")
+    dispute_store = dispute_store or DisputeStore(store.root / "disputes.sqlite3")
+    bus = bus or EventBus()
+    if poller is None and settings is not None:
+        poll_http = make_client(LOG_DIR / "poll_http.jsonl", secrets)
+        poll_client = DisputesClient(settings, TokenProvider(settings, poll_http), poll_http)
+        poller = DisputePoller(poll_client, dispute_store, bus, LOG_DIR / "disputes", settings.poll_seconds)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        stop = asyncio.Event()
+        task = asyncio.create_task(poller.run(stop)) if poller else None
+        try:
+            yield
+        finally:
+            stop.set()
+            if task:
+                await task
+
+    app = FastAPI(title="DisputeDesk webhook receiver", lifespan=lifespan)
+    app.state.bus = bus
+    app.state.dispute_store = dispute_store
 
     @app.post("/webhooks/paypal")
     async def paypal_webhook(request: Request) -> JSONResponse:
         raw = await request.body()
         headers = {k.lower(): v for k, v in request.headers.items()}
         # The verify call is blocking HTTP; keep it off the event loop.
-        return await run_in_threadpool(_handle, headers, raw, verifier, store)
+        return await run_in_threadpool(_handle, headers, raw, verifier, store, dispute_store, bus)
 
     return app
 
 
-def _handle(headers: dict[str, str], raw: bytes, verifier: Verifier, store: EventStore) -> JSONResponse:
+def _detect_from_webhook(event: dict[str, Any], dispute_store: DisputeStore, bus: EventBus) -> None:
+    # Dispute webhooks (CUSTOMER.DISPUTE.CREATED / UPDATED / RESOLVED) carry the dispute as `resource`.
+    # https://developer.paypal.com/api/rest/webhooks/event-names/#disputes
+    # UNVERIFIED: that resource.dispute_id is present on every CUSTOMER.DISPUTE.* event.
+    if not str(event.get("event_type", "")).startswith("CUSTOMER.DISPUTE."):
+        return
+    dispute_id = (event.get("resource") or {}).get("dispute_id")
+    if not dispute_id:
+        return
+    try:
+        if dispute_store.claim(dispute_id, "webhook"):
+            bus.emit(DisputeDetected(dispute_id, "webhook"))
+        else:
+            log.info("dispute=%s already processed via %s; not emitted again",
+                     dispute_id, dispute_store.source_of(dispute_id))
+    except Exception as exc:  # the event is stored already; don't turn this into a 500
+        log.error("dispute detection failed for dispute=%s: %s", dispute_id, type(exc).__name__)
+
+
+def _handle(
+    headers: dict[str, str],
+    raw: bytes,
+    verifier: Verifier,
+    store: EventStore,
+    dispute_store: DisputeStore,
+    bus: EventBus,
+) -> JSONResponse:
     if any(h not in headers for h in SIGNATURE_HEADERS):
         log.warning("rejected webhook: missing signature headers")
         return JSONResponse({"error": "missing signature headers"}, status_code=400)
@@ -149,4 +212,5 @@ def _handle(headers: dict[str, str], raw: bytes, verifier: Verifier, store: Even
     if not store.claim(event_id, raw):
         return JSONResponse({"status": "duplicate"})
     log.info("accepted webhook %s type=%s %s", event_id, event.get("event_type"), _dispute_state(event))
+    _detect_from_webhook(event, dispute_store, bus)
     return JSONResponse({"status": "ok"})
