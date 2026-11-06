@@ -241,3 +241,44 @@ def test_webhook_arriving_while_poll_fetches_wins_once(paypal, client, settings,
     assert row["source"] == "webhook"
     assert row["stage"] == "CHARGEBACK"  # poll's full data kept
     assert not dispute_store.needs_full("PP-D-1")
+
+
+def test_api_disputes_lists_stored_disputes(client, dispute_store):
+    dispute_store.claim("PP-D-1", "poll", {
+        "dispute_id": "PP-D-1",
+        "status": "WAITING_FOR_SELLER_RESPONSE",
+        "dispute_life_cycle_stage": "CHARGEBACK",
+        "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+        "dispute_amount": {"currency_code": "USD", "value": "10.00"},
+        "seller_response_due_date": "2026-11-20T00:00:00.000Z",
+        "links": [{"rel": "self", "method": "GET"},
+                  {"rel": "provide_evidence", "method": "POST"},
+                  {"rel": "accept_claim", "method": "POST"}],
+    }, full=True)
+
+    resp = client.get("/api/disputes")
+
+    assert resp.status_code == 200
+    [row] = resp.json()["disputes"]
+    assert row["dispute_id"] == "PP-D-1"
+    assert row["status"] == "WAITING_FOR_SELLER_RESPONSE"
+    assert row["stage"] == "CHARGEBACK"
+    assert row["reason"] == "MERCHANDISE_OR_SERVICE_NOT_RECEIVED"
+    assert row["amount"] == {"currency_code": "USD", "value": "10.00"}
+    assert row["seller_response_due_date"] == "2026-11-20T00:00:00.000Z"
+    assert row["source"] == "poll"
+    assert row["detected_at"]
+    assert row["actions"] == ["accept_claim", "provide_evidence"]
+
+
+def test_api_disputes_empty(client):
+    assert client.get("/api/disputes").json() == {"disputes": []}
+
+
+def test_api_disputes_refuses_tunnelled_requests(client, dispute_store):
+    dispute_store.claim("PP-D-1", "poll", {"dispute_id": "PP-D-1"}, full=True)
+
+    resp = client.get("/api/disputes", headers={"X-Forwarded-For": "203.0.113.7"})
+
+    assert resp.status_code == 403
+    assert "PP-D-1" not in resp.text

@@ -148,6 +148,17 @@ def create_app(
     app.state.bus = bus
     app.state.dispute_store = dispute_store
 
+    @app.get("/api/disputes")
+    async def stored_disputes(request: Request) -> JSONResponse:
+        # Read-only view of the local store for the dashboard; makes no PayPal call.
+        # This app is exposed through ngrok for webhooks, and ngrok adds X-Forwarded-For to every
+        # tunnelled request, so such requests are refused to keep dispute data off the tunnel.
+        # UNVERIFIED for non-default ngrok configs; put real auth here before any wider exposure.
+        if "x-forwarded-for" in request.headers:
+            return JSONResponse({"error": "local access only"}, status_code=403)
+        disputes = await run_in_threadpool(dispute_store.summaries)
+        return JSONResponse({"disputes": disputes})
+
     @app.post("/webhooks/paypal")
     async def paypal_webhook(request: Request) -> JSONResponse:
         raw = await request.body()
