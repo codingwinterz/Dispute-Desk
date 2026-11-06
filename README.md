@@ -18,6 +18,9 @@ Sandbox only. There are no live credentials and no live base URL anywhere in thi
 - `disputedesk/auth.py`: OAuth client-credentials token with caching
 - `disputedesk/webhooks.py`: FastAPI receiver `POST /webhooks/paypal`
 - `disputedesk/disputes.py`: Disputes API client
+- `disputedesk/poller.py`: background poller started with the app (read-only GETs)
+- `disputedesk/dispute_store.py`: SQLite store of processed dispute IDs, shared by poller and webhook
+- `disputedesk/events.py`: in-process `dispute_detected` event
 - `scripts/sandbox_check.py`: step-by-step check against the real sandbox (not part of pytest)
 - `tests/`: unit tests with mocked HTTP
 
@@ -43,3 +46,13 @@ cp .env.example .env    # then fill in the values; never commit .env
    (read-only: `--list` lists disputes; `--dispute-id PP-D-...` shows one dispute's details with a single GET and no mutating calls)
 
 Logs (raw requests/responses with secrets redacted, plus webhook events) go to `logs/`, which is git-ignored.
+
+## Dispute polling
+
+The receiver app also polls `GET /v1/customer/disputes` every `POLL_SECONDS` (default 10).
+For each dispute ID it has not seen, it fetches `GET /v1/customer/disputes/{id}`, saves the JSON to
+`logs/disputes/<id>.json` and emits `dispute_detected` with `source="poll"`. Dispute webhooks emit the
+same event with `source="webhook"`. Both paths share `logs/disputes.sqlite3`, so each dispute is
+emitted once, by whichever path sees it first. A 401 refreshes the token and retries once.
+429 responses (honouring `Retry-After` if present), 5xx responses and network errors back off
+exponentially, capped at 300s. The loop never stops on an error. The poller only uses GET.
