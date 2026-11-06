@@ -12,6 +12,9 @@ SANDBOX_BASE_URL = "https://api-m.sandbox.paypal.com"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LOG_DIR = PROJECT_ROOT / "logs"
+# Local state (SQLite store of seen disputes). Git-ignored.
+DATA_DIR = PROJECT_ROOT / "data"
+DISPUTE_DB = DATA_DIR / "disputedesk.db"
 DEFAULT_POLL_SECONDS = 10.0
 
 
