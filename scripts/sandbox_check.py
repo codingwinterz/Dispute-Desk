@@ -3,6 +3,7 @@
 Disputes are opened manually (see README). API creation needs the DISPUTE_CREATE scope.
 
     python scripts/sandbox_check.py --inquiry-dispute-id PP-D-... [--claim-dispute-id PP-D-...]
+    python scripts/sandbox_check.py --list
 
 The webhook receiver must be running (it writes events to logs/events/).
 Every raw request/response (secrets redacted) goes to logs/sandbox_check_<ts>.jsonl.
@@ -23,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import httpx  # noqa: E402
 
 from disputedesk.auth import TokenProvider  # noqa: E402
-from disputedesk.config import LOG_DIR, PROJECT_ROOT, load_settings  # noqa: E402
+from disputedesk.config import LOG_DIR, PROJECT_ROOT, SANDBOX_BASE_URL, load_settings  # noqa: E402
 from disputedesk.disputes import DisputesClient  # noqa: E402
 from disputedesk.http_log import make_client  # noqa: E402
 
@@ -175,11 +176,39 @@ class Check:
         return Result("PASS", f"HTTP {resp.status_code}; now {state(self.client.get_dispute(dispute_id))}")
 
 
+def list_disputes(http: httpx.Client, tokens: TokenProvider) -> int:
+    # GET /v1/customer/disputes ("List disputes"). Response: {"items": [...], "links": [...]}.
+    # https://developer.paypal.com/docs/api/customer-disputes/v1/#disputes_list
+    # Sandbox base URL only; SANDBOX_BASE_URL is the only base URL Settings accepts.
+    url = f"{SANDBOX_BASE_URL}/v1/customer/disputes"
+    for attempt in (1, 2):
+        resp = http.get(url, headers=tokens.auth_headers())
+        if resp.status_code == 401 and attempt == 1:
+            tokens.invalidate()
+            continue
+        break
+    print(f"HTTP {resp.status_code}")
+    if resp.is_error:
+        print(paypal_error(resp))
+        return 1
+    items = resp.json().get("items") or []
+    if not items:
+        print("no disputes returned")
+        return 0
+    for d in items:
+        # The API field is dispute_life_cycle_stage; printed as dispute_stage.
+        rels = [link.get("rel") for link in d.get("links", [])]
+        print(f"dispute_id={d.get('dispute_id')} status={d.get('status')} "
+              f"dispute_stage={d.get('dispute_life_cycle_stage')} reason={d.get('reason')} links={rels}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--inquiry-dispute-id", help="dispute in the INQUIRY stage (deflect path)")
     parser.add_argument("--claim-dispute-id", help="second dispute for the defend path")
     parser.add_argument("--webhook-timeout", type=int, default=120, help="seconds to wait in step b")
+    parser.add_argument("--list", action="store_true", help="only list disputes (GET /v1/customer/disputes)")
     args = parser.parse_args()
 
     if not (PROJECT_ROOT / ".env").exists():
@@ -202,7 +231,19 @@ def main() -> int:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
     http = make_client(LOG_DIR / f"sandbox_check_{ts}.jsonl", (settings.client_id, settings.client_secret))
-    client = DisputesClient(settings, TokenProvider(settings, http), http)
+    tokens = TokenProvider(settings, http)
+    if args.list:
+        try:
+            code = list_disputes(http, tokens)
+        except httpx.HTTPStatusError as exc:
+            print(f"FAIL: {paypal_error(exc.response)}")
+            code = 1
+        except httpx.HTTPError as exc:
+            print(f"FAIL: {type(exc).__name__}: network error")
+            code = 1
+        print(f"raw requests/responses: logs/sandbox_check_{ts}.jsonl")
+        return code
+    client = DisputesClient(settings, tokens, http)
     check = Check(client, args)
 
     steps = [
