@@ -28,6 +28,17 @@ class DisputesClient:
 
     # --- reads -------------------------------------------------------------
 
+    def list_disputes(self, page_size: int = 50) -> list[dict[str, Any]]:
+        # GET /v1/customer/disputes ("List disputes"). Response: {"items": [...], "links": [...]}.
+        # https://developer.paypal.com/docs/api/customer-disputes/v1/#disputes_list
+        # UNVERIFIED: page_size maximum of 50 and the item sort order. Only the first page is read,
+        # so with more than page_size disputes some may not be seen.
+        resp = self._request("GET", "", dispute_id="-", action="list", params={"page_size": page_size})
+        if resp.is_error:
+            self._log("-", "list", resp.status_code)
+            resp.raise_for_status()
+        return resp.json().get("items") or []
+
     def get_dispute(self, dispute_id: str) -> dict[str, Any]:
         # GET /v1/customer/disputes/{id}
         # https://developer.paypal.com/docs/api/customer-disputes/v1/#disputes_get
