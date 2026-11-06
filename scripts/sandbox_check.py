@@ -4,6 +4,7 @@ Disputes are opened manually (see README). API creation needs the DISPUTE_CREATE
 
     python scripts/sandbox_check.py --inquiry-dispute-id PP-D-... [--claim-dispute-id PP-D-...]
     python scripts/sandbox_check.py --list
+    python scripts/sandbox_check.py --dispute-id PP-D-...   (read-only: one GET, no mutating calls)
 
 The webhook receiver must be running (it writes events to logs/events/).
 Every raw request/response (secrets redacted) goes to logs/sandbox_check_<ts>.jsonl.
@@ -203,12 +204,78 @@ def list_disputes(http: httpx.Client, tokens: TokenProvider) -> int:
     return 0
 
 
+def format_dispute(d: dict[str, Any]) -> list[str]:
+    """Readable lines for one dispute from GET /v1/customer/disputes/{id}. No I/O."""
+    # GET /v1/customer/disputes/{id} ("Show dispute details").
+    # https://developer.paypal.com/docs/api/customer-disputes/v1/#disputes_get
+    # Documented fields: dispute_id, status, dispute_life_cycle_stage, reason, create_time,
+    # seller_response_due_date, dispute_amount {currency_code, value}, disputed_transactions[],
+    # messages[], links[] {href, rel, method}.
+    # UNVERIFIED: disputed_transactions[] ids named seller_transaction_id / buyer_transaction_id,
+    # and messages[].posted_by == "BUYER" for buyer messages (not checked against a real response).
+    amount = d.get("dispute_amount") or {}
+    amount_str = f"{amount.get('value')} {amount.get('currency_code')}" if amount else None
+    lines = [
+        f"dispute_id={d.get('dispute_id')}",
+        f"status={d.get('status')}",
+        # The API field is dispute_life_cycle_stage; printed as dispute_stage.
+        f"dispute_stage={d.get('dispute_life_cycle_stage')}",
+        f"reason={d.get('reason')}",
+        f"create_time={d.get('create_time')}",
+        f"seller_response_due_date={d.get('seller_response_due_date')}",
+        f"dispute_amount={amount_str}",
+    ]
+
+    txns = d.get("disputed_transactions") or []
+    if txns:
+        lines.append("disputed_transactions:")
+        for t in txns:
+            lines.append(f"  seller_transaction_id={t.get('seller_transaction_id')} "
+                         f"buyer_transaction_id={t.get('buyer_transaction_id')}")
+    else:
+        lines.append("disputed_transactions: none")
+
+    buyer_msgs = [m for m in d.get("messages") or [] if m.get("posted_by") == "BUYER"]
+    if buyer_msgs:
+        lines.append("buyer_messages:")
+        for m in buyer_msgs:
+            lines.append(f"  {m.get('time_posted')}: {m.get('content')}")
+    else:
+        lines.append("buyer_messages: none")
+
+    links = d.get("links") or []
+    if links:
+        lines.append("links:")
+        for link in links:
+            # Names and HTTP methods only; hrefs are not printed.
+            lines.append(f"  {link.get('rel')} {link.get('method')}")
+    else:
+        lines.append("links: none")
+    return lines
+
+
+def show_dispute(client: DisputesClient, dispute_id: str) -> int:
+    # Read-only: only DisputesClient.get_dispute (a GET) is called. Its base URL comes from
+    # Settings, which only accepts SANDBOX_BASE_URL.
+    try:
+        d = client.get_dispute(dispute_id)
+    except httpx.HTTPStatusError as exc:
+        print(f"FAIL: {paypal_error(exc.response)}")
+        return 1
+    for line in format_dispute(d):
+        print(line)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--inquiry-dispute-id", help="dispute in the INQUIRY stage (deflect path)")
     parser.add_argument("--claim-dispute-id", help="second dispute for the defend path")
     parser.add_argument("--webhook-timeout", type=int, default=120, help="seconds to wait in step b")
-    parser.add_argument("--list", action="store_true", help="only list disputes (GET /v1/customer/disputes)")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--list", action="store_true", help="only list disputes (GET /v1/customer/disputes)")
+    mode.add_argument("--dispute-id", metavar="ID",
+                      help="only show one dispute (GET /v1/customer/disputes/{id}); read-only")
     args = parser.parse_args()
 
     if not (PROJECT_ROOT / ".env").exists():
@@ -232,9 +299,13 @@ def main() -> int:
 
     http = make_client(LOG_DIR / f"sandbox_check_{ts}.jsonl", (settings.client_id, settings.client_secret))
     tokens = TokenProvider(settings, http)
-    if args.list:
+    # Read-only modes return here, before Check (which calls mutating endpoints) is built.
+    if args.list or args.dispute_id:
         try:
-            code = list_disputes(http, tokens)
+            if args.list:
+                code = list_disputes(http, tokens)
+            else:
+                code = show_dispute(DisputesClient(settings, tokens, http), args.dispute_id)
         except httpx.HTTPStatusError as exc:
             print(f"FAIL: {paypal_error(exc.response)}")
             code = 1

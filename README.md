@@ -40,5 +40,6 @@ cp .env.example .env    # then fill in the values; never commit .env
 4. As the **sandbox personal (buyer)** account, pay the **sandbox business** account,
    then open disputes on those payments at sandbox.paypal.com (Resolution Center).
 5. Run `.venv/Scripts/python scripts/sandbox_check.py --inquiry-dispute-id PP-D-... [--claim-dispute-id PP-D-...]`
+   (read-only: `--list` lists disputes; `--dispute-id PP-D-...` shows one dispute's details with a single GET and no mutating calls)
 
 Logs (raw requests/responses with secrets redacted, plus webhook events) go to `logs/`, which is git-ignored.
