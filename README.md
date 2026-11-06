@@ -49,10 +49,32 @@ Logs (raw requests/responses with secrets redacted, plus webhook events) go to `
 
 ## Dispute polling
 
-The receiver app also polls `GET /v1/customer/disputes` every `POLL_SECONDS` (default 10).
-For each dispute ID it has not seen, it fetches `GET /v1/customer/disputes/{id}`, saves the JSON to
-`logs/disputes/<id>.json` and emits `dispute_detected` with `source="poll"`. Dispute webhooks emit the
-same event with `source="webhook"`. Both paths share `logs/disputes.sqlite3`, so each dispute is
-emitted once, by whichever path sees it first. A 401 refreshes the token and retries once.
-429 responses (honouring `Retry-After` if present), 5xx responses and network errors back off
-exponentially, capped at 300s. The loop never stops on an error. The poller only uses GET.
+Polling is the primary detector: no dispute webhook has arrived in the sandbox so far. The webhook
+receiver stays on as a second source.
+
+The receiver app polls `GET /v1/customer/disputes` every `POLL_SECONDS` (default 10) and follows
+`next` pages. For each dispute ID it has not seen, it fetches `GET /v1/customer/disputes/{id}`,
+saves the JSON to `logs/disputes/<id>.json` and emits `dispute_detected` with `source="poll"`.
+Dispute webhooks emit the same event with `source="webhook"`.
+
+- Both paths share `data/disputedesk.db` (SQLite, git-ignored). Claiming a dispute is one atomic
+  insert, so each dispute is emitted once, by whichever path sees it first, even if both see it at
+  the same moment. If the webhook got there first, the next poll stores the full dispute
+  without emitting a second event.
+- A 401 refreshes the token and retries once. 429s (honouring `Retry-After`), 5xx responses and
+  network errors back off exponentially, capped at 300s. The loop never stops on an error.
+- Every poll logs `poll ok count=<items> new=<unseen ids>`.
+- The poller only sends GETs. No code path calls provide-evidence, accept-claim, make-offer,
+  escalate or adjudicate.
+
+`GET /api/disputes` returns the stored disputes as JSON:
+id, status, stage, reason, amount, due date, source, detected_at and action link names.
+It makes no PayPal call, and it refuses requests that came through the ngrok tunnel
+(those carry `X-Forwarded-For`).
+
+```sh
+# run the app (webhook receiver + poller); optional: POLL_SECONDS=30 in .env
+.venv/Scripts/python -m uvicorn --factory disputedesk.webhooks:create_app --port 8000
+# in another terminal
+curl http://127.0.0.1:8000/api/disputes
+```
