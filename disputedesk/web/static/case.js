@@ -11,7 +11,7 @@
   const disputeId = decodeURIComponent(location.pathname.replace(/^\/case\//, "").replace(/\/$/, ""));
   let lastKey = "";
   let editorDirty = false;   // unsaved draft edits: the 5-second refresh must not replace them
-  const MAX_DRAFT = 4000;    // matches the server's cap (disputedesk/drafts.py)
+  const MAX_DRAFT = 2000;    // matches the server's cap (disputedesk/drafts.py)
 
   function svg(tag, attrs = {}, ...children) {
     const node = document.createElementNS(SVG, tag);
@@ -121,7 +121,7 @@
     text.addEventListener("input", markDirty);
     restore.hidden = !(draft && draft.edited);
     restore.addEventListener("click", () => { text.value = rec.evidence_summary; markDirty(); text.focus(); });
-    fix.addEventListener("click", () => { text.value = `${text.value.trimEnd()} ${sandboxNote}`; markDirty(); text.focus(); });
+    fix.addEventListener("click", () => { text.value = `${sandboxNote} ${text.value.replace(sandboxNote, "").trim()}`; markDirty(); text.focus(); });
 
     save.addEventListener("click", async () => {
       save.disabled = true;

@@ -80,7 +80,8 @@ class DecisionOutput(BaseModel):
     decision: Literal["DEFEND", "ACCEPT"]
     risk_score: int = Field(ge=0, le=100)
     reasoning: list[ReasonPoint] = Field(min_length=3, max_length=5)
-    evidence_summary: str = Field(min_length=1, max_length=2000)
+    # 1800 leaves room for the sandbox and pattern notes within PayPal's 2000-character notes limit.
+    evidence_summary: str = Field(min_length=1, max_length=1800)
 
 
 class InvalidOutput(Exception):

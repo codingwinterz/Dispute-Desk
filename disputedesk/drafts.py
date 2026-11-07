@@ -14,9 +14,9 @@ from typing import Any
 
 from disputedesk.decision import SANDBOX_NOTE
 
-# App-side cap on the draft length. UNVERIFIED: PayPal's own limit for evidence notes; it is checked
-# against the provide-evidence docs before anything is submitted (Phase 3).
-MAX_DRAFT_CHARS = 4000
+# PayPal's limit for evidence notes: evidence.notes is 1-2000 characters (Disputes v1 OpenAPI spec).
+# Enforced when saving and again at submit time.
+MAX_DRAFT_CHARS = 2000
 
 
 class DraftError(ValueError):
@@ -32,9 +32,9 @@ def validate_draft(text: str) -> str:
         raise DraftError("empty", "The draft is empty. Write the response you want PayPal to read.")
     if len(text) > MAX_DRAFT_CHARS:
         raise DraftError("too_long", f"The draft is {len(text)} characters; the limit is {MAX_DRAFT_CHARS}.")
-    if SANDBOX_NOTE not in text:
-        # Shipment and device records are seeded test data; the draft must keep saying so.
-        raise DraftError("missing_sandbox_note", f'Keep this sentence in the draft: "{SANDBOX_NOTE}"')
+    if not text.startswith(SANDBOX_NOTE):
+        # Shipment and device records are seeded test data; the draft must say so first.
+        raise DraftError("missing_sandbox_note", f'Start the draft with this sentence: "{SANDBOX_NOTE}"')
     return text
 
 

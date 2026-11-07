@@ -14,7 +14,7 @@ from disputedesk.policies import DEFAULT_RULES, PolicySettings, PolicyStore, bui
 from disputedesk.webhooks import EventStore, create_app
 from tests.fakes import FakeGraph, context_row, sample_dispute
 
-DRAFT = f"UPS delivered the parcel on 2026-11-03 with the buyer's signature. {SANDBOX_NOTE}"
+DRAFT = f"{SANDBOX_NOTE} UPS delivered the parcel on 2026-11-03 with the buyer's signature."
 JSON_HDR = {"Content-Type": "application/json"}
 
 
@@ -175,7 +175,7 @@ def test_agent_draft_is_effective_until_merchant_saves(client, stores):
     decided(stores)
     draft = client.get("/api/decisions/PP-R-TST-1").json()["draft"]
     assert draft["edited"] is False and draft["text"] == DRAFT
-    edited = "Signed delivery confirmed by UPS on 2026-11-03. " + SANDBOX_NOTE
+    edited = SANDBOX_NOTE + " Signed delivery confirmed by UPS on 2026-11-03."
     resp = client.put("/api/drafts/PP-R-TST-1", json={"text": edited})
     assert resp.status_code == 200 and resp.json()["draft"]["edited"] is True
     draft = client.get("/api/decisions/PP-R-TST-1").json()["draft"]
@@ -184,7 +184,7 @@ def test_agent_draft_is_effective_until_merchant_saves(client, stores):
 
 def test_rerunning_the_agent_keeps_the_saved_draft(client, stores):
     decided(stores)
-    edited = "Merchant wording. " + SANDBOX_NOTE
+    edited = SANDBOX_NOTE + " Merchant wording."
     client.put("/api/drafts/PP-R-TST-1", json={"text": edited})
     stores[1].save("PP-R-TST-1", DecisionResult("ok", "m", 1, output=out(), facts=[]), None, DEFAULT_RULES)
     assert client.get("/api/decisions/PP-R-TST-1").json()["draft"]["text"] == edited
@@ -196,7 +196,9 @@ def test_draft_validation(client, stores):
     assert resp.status_code == 422 and resp.json()["error"] == "missing_sandbox_note"
     assert resp.json()["note"] == SANDBOX_NOTE
     assert client.put("/api/drafts/PP-R-TST-1", json={"text": "   "}).json()["error"] == "empty"
-    long = "x" * MAX_DRAFT_CHARS + SANDBOX_NOTE
+    long = SANDBOX_NOTE + "x" * MAX_DRAFT_CHARS
+    end = client.put("/api/drafts/PP-R-TST-1", json={"text": "Delivered. " + SANDBOX_NOTE})
+    assert end.json()["error"] == "missing_sandbox_note"  # must come first
     assert client.put("/api/drafts/PP-R-TST-1", json={"text": long}).json()["error"] == "too_long"
     assert client.put("/api/drafts/PP-R-TST-1", json={"words": "x"}).status_code == 422
     assert client.put("/api/drafts/PP-R-NOPE", json={"text": DRAFT}).status_code == 404

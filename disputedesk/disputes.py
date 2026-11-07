@@ -20,6 +20,43 @@ DOC = "https://developer.paypal.com/docs/api/customer-disputes/v1/"
 MAX_PAGES = 20
 
 
+PROVIDE_EVIDENCE = "provide_evidence"
+ACCEPT_CLAIM = "accept_claim"
+# Evidence type for a notes-only defence. PayPal requested OTHER from the seller on every sandbox
+# dispute seen so far (evidences[].source = REQUESTED_FROM_SELLER).
+EVIDENCE_TYPE = "OTHER"
+# Fixed accept-claim note, shown in the confirm dialog before sending.
+ACCEPT_NOTE = "Accepting the claim: full refund to the buyer."
+
+
+def build_action_request(base: str, action: str, dispute_id: str, text: str,
+                         headers: dict[str, str]) -> httpx.Request:
+    """The exact request for an approved response. The dry run builds it with a redacted token and
+    shows it; the submit path builds it the same way and sends it. Never sent from here."""
+    if action == PROVIDE_EVIDENCE:
+        # POST /v1/customer/disputes/{id}/provide-evidence, multipart/form-data.
+        # Verified from PayPal's sample (Use Disputes API guide): a part named "input" with
+        # type=application/json holding {"evidences": [{"evidence_type", "notes", ...}]}; notes is
+        # 1-2000 characters (OpenAPI spec, evidence.notes).
+        # UNVERIFIED: a notes-only request with no file part. PayPal's sample also attaches "file1";
+        # the guide implies files are optional, but no sample shows it. Marked UNVERIFIED in the UI
+        # until one succeeds (disputedesk.submissions records the first success).
+        # https://developer.paypal.com/platforms/disputes/handle-disputes/use-disputes-api
+        # https://developer.paypal.com/docs/api/customer-disputes/v1/#disputes_provide-evidence
+        metadata = {"evidences": [{"evidence_type": EVIDENCE_TYPE, "notes": text}]}
+        return httpx.Request("POST", f"{base}/{dispute_id}/provide-evidence", headers=headers,
+                             files={"input": (None, json.dumps(metadata), "application/json")})
+    if action == ACCEPT_CLAIM:
+        # POST /v1/customer/disputes/{id}/accept-claim, application/json {"note": "..."} as in
+        # PayPal's sample. The guide mentions an accept-claim reason and invoice ID but does not
+        # name those fields, so they are not sent; with no accept_claim_type PayPal applies its
+        # default (full refund). Closes the dispute in the buyer's favour.
+        # https://developer.paypal.com/platforms/disputes/handle-disputes/use-disputes-api
+        # https://developer.paypal.com/docs/api/customer-disputes/v1/#disputes_accept-claim
+        return httpx.Request("POST", f"{base}/{dispute_id}/accept-claim", headers=headers, json={"note": text})
+    raise ValueError(f"unknown action {action!r}")
+
+
 class DisputesClient:
     def __init__(self, settings: Settings, tokens: TokenProvider, http: httpx.Client):
         self._base = f"{settings.base_url}/v1/customer/disputes"
@@ -128,6 +165,23 @@ class DisputesClient:
         }
         return self._request("POST", f"/{dispute_id}/provide-evidence", dispute_id=dispute_id,
                              action="provide-evidence", files=files)
+
+    # --- approved merchant responses (Phase 3) --------------------------------
+    # Only disputedesk.submissions calls these, from the confirmed approval route. The poller and the
+    # webhook path never do.
+
+    def send_action(self, action: str, dispute_id: str, text: str) -> httpx.Response:
+        """Send one approved response. A 401 refreshes the token and resends once (a 401 means PayPal
+        did not process the request). Any other outcome is returned to the caller as-is."""
+        for attempt in (1, 2):
+            request = build_action_request(self._base, action, dispute_id, text, self._tokens.auth_headers())
+            resp = self._http.send(request)
+            if resp.status_code == 401 and attempt == 1:
+                self._tokens.invalidate()
+                continue
+            break
+        self._log(dispute_id, action, resp.status_code)
+        return resp
 
     def escalate(self, dispute_id: str, note: str) -> httpx.Response:
         # POST /v1/customer/disputes/{id}/escalate: escalates an inquiry to a PayPal claim.
