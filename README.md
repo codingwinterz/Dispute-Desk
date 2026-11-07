@@ -25,7 +25,8 @@ Sandbox only. There are no live credentials and no live base URL anywhere in thi
 - `disputedesk/events.py`: in-process `dispute_detected` and `dispute_updated` events
 - `disputedesk/graph.py`: FalkorDB graph store and the one-query dispute context
 - `disputedesk/seed.py`, `seed/merchant_data.json`: seeded merchant context
-- `disputedesk/policies.py`: policy rules P1–P4 the agent may cite
+- `disputedesk/policies.py`: merchant policy settings (SQLite) and the rules P1–P4 built from them
+- `disputedesk/drafts.py`: merchant-edited evidence drafts (SQLite)
 - `disputedesk/decision.py`: LiteLLM decision step with schema validation and citation checks
 - `disputedesk/decision_store.py`: SQLite store of decisions
 - `disputedesk/analyzer.py`: worker thread that runs decisions automatically
@@ -103,6 +104,19 @@ by FastAPI, AG Grid Community from a CDN).
 - **Case** (`/case/{id}`): the recommendation, risk score, reasoning with the facts it cites, the draft
   response, and the graph path behind it with the cited nodes highlighted. Seeded records carry a
   visible `seeded` tag. The Approve button is disabled: nothing is sent to PayPal yet.
+- **Policies** (`/policies`): switch rules P1–P4 on or off and set their thresholds (accept under a
+  dollar amount; how many other disputes must share a device or IP). The page shows the exact rule
+  text the agent reads, built by the server. Saved policies apply to the next analysis; each decision
+  stores the rules it was made under, and the case page shows the rules it cited.
+
+The draft response on the case page is editable. A saved draft is kept apart from the agent's
+decision (re-running the agent never overwrites it) and is the text that will be submitted once
+approval exists. Saving refuses a draft without the sentence saying shipment and device records are
+sandbox test data.
+
+Writes (`PUT /api/policies`, `PUT /api/drafts/{id}`, `POST /api/policies/preview`) accept JSON only,
+from this app's own pages (a foreign `Origin` is refused), and like every non-webhook route are
+local-only. They change the local SQLite file only; none calls PayPal.
 
 ```sh
 # run the app (webhook receiver + poller + analyzer + dashboard); optional: POLL_SECONDS=30 in .env
