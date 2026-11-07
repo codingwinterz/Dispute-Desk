@@ -83,13 +83,29 @@ Dispute webhooks emit the same event with `source="webhook"`.
 - The poller only sends GETs. No code path calls provide-evidence, accept-claim, make-offer,
   escalate or adjudicate.
 
-`GET /api/disputes` returns the stored disputes as JSON:
-id, status, stage, reason, amount, due date, source, detected_at and action link names.
-It makes no PayPal call, and it refuses requests that came through the ngrok tunnel
-(those carry `X-Forwarded-For`).
+`GET /api/disputes` returns the stored disputes as JSON: id, status, stage, reason, amount, due
+date, `source` (always `paypal`), `detected_via` (`poll` or `webhook`), detected_at, action link
+names, and the agent's decision summary (or `null` while analysis is pending).
+`GET /api/decisions/{id}` returns one dispute with its full decision: reasoning, cited facts, draft
+evidence and the graph snapshot. Neither makes a PayPal call.
+
+Only `POST /webhooks/paypal` is public. Every other route (dashboard, static files, `/api/*`)
+refuses requests that came through the ngrok tunnel (those carry `X-Forwarded-For`).
+
+## Dashboard
+
+Open http://127.0.0.1:8000/ while the app runs (local only; no build step, plain HTML/JS/CSS served
+by FastAPI, AG Grid Community from a CDN).
+
+- **Queue** (`/`): every stored dispute with a live countdown to the seller response deadline (red
+  under 72 hours), status, recommended action, risk score and source. Search, reason and status
+  filters; refreshes every 5 seconds and flashes cells that changed.
+- **Case** (`/case/{id}`): the recommendation, risk score, reasoning with the facts it cites, the draft
+  response, and the graph path behind it with the cited nodes highlighted. Seeded records carry a
+  visible `seeded` tag. The Approve button is disabled: nothing is sent to PayPal yet.
 
 ```sh
-# run the app (webhook receiver + poller); optional: POLL_SECONDS=30 in .env
+# run the app (webhook receiver + poller + analyzer + dashboard); optional: POLL_SECONDS=30 in .env
 .venv/Scripts/python -m uvicorn --factory disputedesk.webhooks:create_app --port 8000
 # in another terminal
 curl http://127.0.0.1:8000/api/disputes
