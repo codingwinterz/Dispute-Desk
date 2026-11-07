@@ -1,4 +1,9 @@
-"""In-process events. Today there is one: dispute_detected, emitted once per new dispute."""
+"""In-process events.
+
+dispute_detected: emitted once per new dispute.
+dispute_updated: emitted when the poller stores newer data for a dispute it already had
+(full details backfilled after a webhook, or a changed status/stage/links).
+"""
 
 import logging
 import threading
@@ -15,7 +20,15 @@ class DisputeDetected:
     name: str = "dispute_detected"
 
 
-Subscriber = Callable[[DisputeDetected], None]
+@dataclass(frozen=True)
+class DisputeUpdated:
+    dispute_id: str
+    source: str  # "poll"
+    name: str = "dispute_updated"
+
+
+Event = DisputeDetected | DisputeUpdated
+Subscriber = Callable[[Event], None]
 
 
 class EventBus:
@@ -27,7 +40,7 @@ class EventBus:
         with self._lock:
             self._subscribers.append(fn)
 
-    def emit(self, event: DisputeDetected) -> None:
+    def emit(self, event: Event) -> None:
         log.info("%s dispute=%s source=%s", event.name, event.dispute_id, event.source)
         with self._lock:
             subscribers = list(self._subscribers)

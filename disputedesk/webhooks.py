@@ -4,6 +4,8 @@ Run with:  uvicorn --factory disputedesk.webhooks:create_app --port 8000
 
 The app also starts the dispute poller (disputedesk.poller) as a background task. Disputes seen
 through either path go through one DisputeStore, so dispute_detected is emitted once per dispute.
+The analyzer (disputedesk.analyzer) runs the decision step for new or updated disputes on its own
+worker thread, and sweeps stored disputes without a decision at startup.
 """
 
 import asyncio
@@ -20,11 +22,14 @@ from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
+from disputedesk.analyzer import Analyzer
 from disputedesk.auth import TokenProvider
-from disputedesk.config import DISPUTE_DB, LOG_DIR, Settings, load_settings
+from disputedesk.config import DISPUTE_DB, LOG_DIR, Settings, load_agent_settings, load_settings
+from disputedesk.decision_store import DecisionStore
 from disputedesk.dispute_store import DisputeStore, safe_filename
 from disputedesk.disputes import DisputesClient
 from disputedesk.events import DisputeDetected, EventBus
+from disputedesk.graph import GraphStore, connect
 from disputedesk.http_log import make_client
 from disputedesk.poller import DisputePoller
 
@@ -116,6 +121,7 @@ def create_app(
     dispute_store: DisputeStore | None = None,
     bus: EventBus | None = None,
     poller: DisputePoller | None = None,
+    analyzer: Analyzer | None = None,
 ) -> FastAPI:
     """Build the app. With no verifier, settings come from the environment and the real
     poller is started; tests inject their own pieces and get no poller unless they pass one."""
@@ -132,10 +138,19 @@ def create_app(
         poll_http = make_client(LOG_DIR / "poll_http.jsonl", secrets)
         poll_client = DisputesClient(settings, TokenProvider(settings, poll_http), poll_http)
         poller = DisputePoller(poll_client, dispute_store, bus, LOG_DIR / "disputes", settings.poll_seconds)
+    if analyzer is None and settings is not None:
+        agent = load_agent_settings()
+        analyzer = Analyzer(dispute_store, DecisionStore(DISPUTE_DB), lambda: GraphStore(connect(agent)),
+                            agent.llm_model)
+    if analyzer is not None:
+        bus.subscribe(analyzer.on_event)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         stop = asyncio.Event()
+        if analyzer:
+            analyzer.start()
+            await run_in_threadpool(analyzer.sweep)
         task = asyncio.create_task(poller.run(stop)) if poller else None
         try:
             yield
@@ -143,6 +158,8 @@ def create_app(
             stop.set()
             if task:
                 await task
+            if analyzer:
+                await run_in_threadpool(analyzer.stop)
 
     app = FastAPI(title="DisputeDesk webhook receiver", lifespan=lifespan)
     app.state.bus = bus
