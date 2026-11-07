@@ -32,6 +32,7 @@ class Analyzer:
         model: str,
         decide_fn: Callable[..., DecisionResult] = decide,
         rules: list[dict[str, str]] | None = None,
+        rules_provider: Callable[[], list[dict[str, str]]] | None = None,
     ):
         self._disputes = disputes
         self._decisions = decisions
@@ -39,7 +40,10 @@ class Analyzer:
         self._graph: GraphStore | None = None
         self._model = model
         self._decide = decide_fn
-        self._rules = rules if rules is not None else DEFAULT_RULES
+        # The merchant's current policy rules are read at decision time (rules_provider), so a saved
+        # policy change applies to the next analysis. A fixed list is for tests and the CLI default.
+        fixed = rules if rules is not None else DEFAULT_RULES
+        self._rules_provider = rules_provider or (lambda: fixed)
         self._queue: queue.Queue[Any] = queue.Queue()
         self._pending: set[str] = set()
         self._lock = threading.Lock()
@@ -121,6 +125,7 @@ class Analyzer:
             self._decisions.save(dispute_id, DecisionResult("error", self._model, 0, error=status), None)
             return status
         facts = context_to_facts(ctx)
-        result = self._decide(dispute_id, facts, self._rules, self._model)
-        self._decisions.save(dispute_id, result, ctx)
+        rules = self._rules_provider()
+        result = self._decide(dispute_id, facts, rules, self._model)
+        self._decisions.save(dispute_id, result, ctx, rules)
         return result.status if result.status == "ok" else (result.error or "error")

@@ -19,6 +19,7 @@ from disputedesk.config import DISPUTE_DB, load_agent_settings  # noqa: E402
 from disputedesk.decision_store import DecisionStore  # noqa: E402
 from disputedesk.dispute_store import DisputeStore  # noqa: E402
 from disputedesk.graph import GraphStore, connect, context_to_facts  # noqa: E402
+from disputedesk.policies import PolicyStore  # noqa: E402
 
 
 def print_decision(rec: dict) -> None:
@@ -42,7 +43,9 @@ def main() -> int:
 
     agent = load_agent_settings()
     disputes, decisions = DisputeStore(DISPUTE_DB), DecisionStore(DISPUTE_DB)
-    analyzer = Analyzer(disputes, decisions, lambda: GraphStore(connect(agent)), agent.llm_model)
+    policies = PolicyStore(DISPUTE_DB)  # the merchant's saved policy rules (defaults if never saved)
+    analyzer = Analyzer(disputes, decisions, lambda: GraphStore(connect(agent)), agent.llm_model,
+                        rules_provider=policies.rules)
     ids = sorted(disputes.full_disputes()) if args.all else [args.dispute_id]
     failed = False
     try:
@@ -70,6 +73,7 @@ def main() -> int:
     finally:
         disputes.close()
         decisions.close()
+        policies.close()
     return 1 if failed else 0
 
 

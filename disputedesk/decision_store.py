@@ -31,8 +31,13 @@ class DecisionStore:
                 " error TEXT,"
                 " created_at TEXT NOT NULL)"
             )
+            # Added in Phase 2: the policy rules the decision was made under (JSON list of {id, text}).
+            cols = {r[1] for r in self._db.execute("PRAGMA table_info(decisions)")}
+            if "rules" not in cols:
+                self._db.execute("ALTER TABLE decisions ADD COLUMN rules TEXT")
 
-    def save(self, dispute_id: str, result: DecisionResult, graph_context: dict[str, Any] | None) -> None:
+    def save(self, dispute_id: str, result: DecisionResult, graph_context: dict[str, Any] | None,
+             rules: list[dict[str, str]] | None = None) -> None:
         out = result.output
         row = (
             dispute_id, result.status,
@@ -44,9 +49,13 @@ class DecisionStore:
             json.dumps(graph_context) if graph_context is not None else None,
             result.model, result.attempts, result.error,
             datetime.now(timezone.utc).isoformat(),
+            json.dumps(rules) if rules is not None else None,
         )
         with self._lock, self._db:
-            self._db.execute("INSERT OR REPLACE INTO decisions VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", row)
+            self._db.execute(
+                "INSERT OR REPLACE INTO decisions (dispute_id, status, decision, risk_score, reasoning,"
+                " evidence_summary, facts, graph_context, model, attempts, error, created_at, rules)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", row)
 
     def get(self, dispute_id: str) -> dict[str, Any] | None:
         with self._lock:
@@ -56,7 +65,7 @@ class DecisionStore:
         if row is None:
             return None
         rec = dict(zip(cols, row))
-        for key in ("reasoning", "facts", "graph_context"):
+        for key in ("reasoning", "facts", "graph_context", "rules"):
             rec[key] = json.loads(rec[key]) if rec[key] else None
         return rec
 
