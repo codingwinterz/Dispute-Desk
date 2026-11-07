@@ -21,6 +21,8 @@ from disputedesk.config import GRAPH_NAME, AgentSettings
 
 PAYPAL = "paypal"
 SEEDED = "seeded"
+# Start of the fact text for each linked dispute (the decision step checks for it).
+LINKED_PREFIX = "Linked dispute "
 
 
 class GraphLike(Protocol):
@@ -247,7 +249,7 @@ def context_to_facts(ctx: dict[str, Any]) -> list[dict[str, str]]:
         facts.append((f"{len(linked)} other dispute(s) come from a transaction sharing this checkout's "
                       "device hash or IP.", SEEDED))
         for o in linked:
-            facts.append((f"Linked dispute {o['id']} (transaction {o['transaction_id']}, reason {o['reason']}, "
+            facts.append((f"{LINKED_PREFIX}{o['id']} (transaction {o['transaction_id']}, reason {o['reason']}, "
                           f"status {o['status']}) shares the {o['via'].replace('_', ' ')}.", o["source"]))
     else:
         facts.append(("No other dispute shares this checkout's device hash or IP.", SEEDED))

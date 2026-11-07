@@ -91,3 +91,88 @@ def test_raw_model_output_is_not_logged(caplog):
     caplog.set_level("DEBUG")
     decide("D1", FACTS, DEFAULT_RULES, "m", completion=FakeLLM("RAW-MODEL-TEXT", "RAW-MODEL-TEXT"))
     assert "RAW-MODEL-TEXT" not in caplog.text
+
+
+# --- wording, draft notes, risk definition --------------------------------------------------
+
+from disputedesk.decision import PATTERN_NOTE, SANDBOX_NOTE, SYSTEM_PROMPT  # noqa: E402
+from disputedesk.graph import LINKED_PREFIX  # noqa: E402
+
+
+@pytest.mark.parametrize("word", ["fraud", "Fraudulent", "abuse", "abuser", "ring", "rings"])
+def test_forbidden_words_are_rejected(word):
+    with pytest.raises(InvalidOutput) as exc:
+        parse_output(good(evidence_summary=f"This looks like a {word} case."), ALLOWED)
+    assert exc.value.code == "forbidden_word"
+    pts = [{"point": f"Device {word}.", "cites": ["F1"]}, {"point": "b", "cites": ["F2"]}, {"point": "c", "cites": ["F3"]}]
+    with pytest.raises(InvalidOutput):
+        parse_output(good(reasoning=pts), ALLOWED)
+
+
+def test_ordinary_words_containing_forbidden_text_pass():
+    out = parse_output(good(evidence_summary="During delivery the string of scans was complete."), ALLOWED)
+    assert out.decision == "DEFEND"
+
+
+def test_forbidden_word_retry_then_clean_reply_succeeds():
+    llm = FakeLLM(good(evidence_summary="A fraud ring."), good())
+    r = decide("D1", FACTS, DEFAULT_RULES, "m", completion=llm)
+    assert r.status == "ok" and r.attempts == 2
+    assert "sharing this device hash" in llm.calls[1]["messages"][-1]["content"] and "not proof" in llm.calls[1]["messages"][-1]["content"]
+
+
+def test_prompt_defines_risk_score_and_wording():
+    assert "likelihood, 0 to 100, that this dispute is invalid or fraudulent based only on the" in SYSTEM_PROMPT
+    assert "LOW score" in SYSTEM_PROMPT and "share this device hash" in SYSTEM_PROMPT
+    assert not any(w in r["text"].lower() for r in DEFAULT_RULES for w in ("fraud", "abuse", "ring "))
+
+
+def test_every_draft_gets_the_sandbox_note_once():
+    r = decide("D1", FACTS, DEFAULT_RULES, "m", completion=FakeLLM(good()))
+    assert r.output.evidence_summary.endswith(SANDBOX_NOTE)
+    assert r.output.evidence_summary.count(SANDBOX_NOTE) == 1
+    assert PATTERN_NOTE not in r.output.evidence_summary  # no linked disputes in FACTS
+    already = good(evidence_summary="Delivered. " + SANDBOX_NOTE)
+    r2 = decide("D1", FACTS, DEFAULT_RULES, "m", completion=FakeLLM(already))
+    assert r2.output.evidence_summary.count(SANDBOX_NOTE) == 1
+
+
+def test_linked_disputes_add_pattern_note_unless_draft_says_it():
+    linked = FACTS + [{"id": "F6", "text": f"{LINKED_PREFIX}SEED-D-1 shares the device hash.", "source": "seeded"}]
+    r = decide("D1", linked, DEFAULT_RULES, "m", completion=FakeLLM(good()))
+    assert PATTERN_NOTE in r.output.evidence_summary
+    said = good(evidence_summary="Two disputes share this device hash; this pattern is not proof.")
+    r2 = decide("D1", linked, DEFAULT_RULES, "m", completion=FakeLLM(said))
+    assert PATTERN_NOTE not in r2.output.evidence_summary
+
+
+# --- backoff on 429 / 503 -------------------------------------------------------------------
+
+
+class HTTPish(Exception):
+    def __init__(self, status_code):
+        super().__init__(f"HTTP {status_code}")
+        self.status_code = status_code
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_retryable_status_backs_off_then_succeeds(status):
+    sleeps = []
+    llm = FakeLLM(HTTPish(status), HTTPish(status), good())
+    r = decide("D1", FACTS, DEFAULT_RULES, "m", completion=llm, sleep=sleeps.append)
+    assert r.status == "ok" and len(llm.calls) == 3 and sleeps == [1.0, 2.0]
+
+
+def test_three_retryable_failures_give_up():
+    sleeps = []
+    llm = FakeLLM(HTTPish(503), HTTPish(429), HTTPish(503))
+    r = decide("D1", FACTS, DEFAULT_RULES, "m", completion=llm, sleep=sleeps.append)
+    assert r.status == "error" and r.error == "llm_call_failed:HTTPish"
+    assert len(llm.calls) == 3 and sleeps == [1.0, 2.0]
+
+
+def test_non_retryable_status_is_not_retried():
+    sleeps = []
+    llm = FakeLLM(HTTPish(400))
+    r = decide("D1", FACTS, DEFAULT_RULES, "m", completion=llm, sleep=sleeps.append)
+    assert r.status == "error" and len(llm.calls) == 1 and sleeps == []
