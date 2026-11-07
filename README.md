@@ -99,11 +99,19 @@ refuses requests that came through the ngrok tunnel (those carry `X-Forwarded-Fo
 Open http://127.0.0.1:8000/ while the app runs (local only; no build step, plain HTML/JS/CSS served
 by FastAPI, AG Grid Community from a CDN).
 
+- **Overview** (`/overview`): the next response deadline, counts (open disputes, amount in open
+  disputes per currency, due within 72 hours, without a recommendation) and the open disputes in the
+  order to answer them.
+- **Activity** (`/activity`): a timeline of what happened to each dispute (detected, analyzed, draft
+  edited, approved, PayPal's answer), built from the existing read-only API.
+- **Insights** (`/insights`): recommendation split, risk-score bands, disputes by reason and open
+  disputes by deadline, all counted from the local store.
 - **Queue** (`/`): every stored dispute with a live countdown to the seller response deadline (red
   under 72 hours), status, recommended action, risk score and source. Search, reason and status
   filters; refreshes every 5 seconds and flashes cells that changed.
 - **Case** (`/case/{id}`): the recommendation, risk score, reasoning with the facts it cites, the draft
-  response, and the graph path behind it with the cited nodes highlighted. Seeded records carry a
+  response, and the graph path behind it with the cited nodes highlighted, in 3D (three.js 0.160.0 from
+  cdnjs) or as a flat diagram when WebGL is missing or reduced motion is on. Seeded records carry a
   visible `seeded` tag, plus the approval panel described below.
 - **Policies** (`/policies`): switch rules P1–P4 on or off and set their thresholds (accept under a
   dollar amount; how many other disputes must share a device or IP). The page shows the exact rule
