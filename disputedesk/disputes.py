@@ -38,9 +38,10 @@ def build_action_request(base: str, action: str, dispute_id: str, text: str,
         # Verified from PayPal's sample (Use Disputes API guide): a part named "input" with
         # type=application/json holding {"evidences": [{"evidence_type", "notes", ...}]}; notes is
         # 1-2000 characters (OpenAPI spec, evidence.notes).
-        # UNVERIFIED: a notes-only request with no file part. PayPal's sample also attaches "file1";
-        # the guide implies files are optional, but no sample shows it. Marked UNVERIFIED in the UI
-        # until one succeeds (disputedesk.submissions records the first success).
+        # Notes only, no file part: not shown in PayPal's docs (their sample also attaches "file1"),
+        # but verified once in the sandbox: HTTP 200 on 2026-11-07 for PP-R-JTQ-10195324, after which
+        # the dispute moved to UNDER_REVIEW. disputedesk.submissions records the first success per
+        # database and shows UNVERIFIED in the UI until then.
         # https://developer.paypal.com/platforms/disputes/handle-disputes/use-disputes-api
         # https://developer.paypal.com/docs/api/customer-disputes/v1/#disputes_provide-evidence
         metadata = {"evidences": [{"evidence_type": EVIDENCE_TYPE, "notes": text}]}
