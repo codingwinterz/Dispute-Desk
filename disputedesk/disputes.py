@@ -44,8 +44,12 @@ def build_action_request(base: str, action: str, dispute_id: str, text: str,
         # https://developer.paypal.com/platforms/disputes/handle-disputes/use-disputes-api
         # https://developer.paypal.com/docs/api/customer-disputes/v1/#disputes_provide-evidence
         metadata = {"evidences": [{"evidence_type": EVIDENCE_TYPE, "notes": text}]}
-        return httpx.Request("POST", f"{base}/{dispute_id}/provide-evidence", headers=headers,
-                             files={"input": (None, json.dumps(metadata), "application/json")})
+        request = httpx.Request("POST", f"{base}/{dispute_id}/provide-evidence", headers=headers,
+                                files={"input": (None, json.dumps(metadata), "application/json")})
+        # A multipart body is a stream; read it now so the redacting logger (and the dry run) can see
+        # the exact bytes that are sent. Unread, logging the request raises httpx.RequestNotRead.
+        request.read()
+        return request
     if action == ACCEPT_CLAIM:
         # POST /v1/customer/disputes/{id}/accept-claim, application/json {"note": "..."} as in
         # PayPal's sample. The guide mentions an accept-claim reason and invoice ID but does not
