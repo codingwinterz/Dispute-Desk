@@ -6,8 +6,9 @@ was not supplied makes the output invalid, as does a forbidden word. Invalid out
 then recorded as an error. A 429 or 503 from the LLM call is retried with exponential backoff.
 Raw model output is never logged.
 
-risk_score: likelihood, 0 to 100, that the dispute is invalid or fraudulent based only on the
-supplied facts. It is not the decision: a clean case accepted for cost reasons scores LOW.
+risk_score: likelihood, 0 to 100, that the buyer's claim is valid (the merchant would lose if it
+defended), based only on the supplied facts. HIGH means the evidence favours the buyer. Anchors are
+in the prompt. When ACCEPT is chosen only for cost, the score still reflects the facts.
 """
 
 import json
@@ -44,9 +45,15 @@ Use ONLY the numbered facts (F1, F2, ...) and policy rules (P1, P2, ...) in the 
 source "paypal" come from PayPal; facts marked "seeded" are the merchant's own records. Do not use any
 other knowledge about the dispute, and do not state anything that no supplied fact says.
 
-risk_score is the likelihood, 0 to 100, that this dispute is invalid or fraudulent based only on the
-supplied facts. It is separate from the decision: a clean, low-risk case that you ACCEPT for cost
-reasons must get a LOW score.
+risk_score is the likelihood, 0 to 100, that the buyer's claim is valid, meaning the merchant would
+lose if it defended. Judge it only from the supplied facts. HIGH means the evidence favours the buyer.
+Anchors:
+- delivered with a buyer signature and no contradicting facts: 5 to 20
+- no carrier scan, or a label-only shipment: 70 to 90
+- disputes that share this device hash or IP may move the score by at most 15 points on their own
+If you ACCEPT because the evidence favours the buyer, the score must be HIGH. If you ACCEPT only
+because the amount is under the P2 threshold, score the facts as they are; the cost reason does not
+change the score.
 
 Wording: never use the words "fraud", "abuse", "abuser" or "ring" (or their plurals) anywhere in
 your reply. Describe linked disputes only as disputes that "share this device hash" or "share this
@@ -122,13 +129,12 @@ def parse_output(text: str, allowed_ids: set[str]) -> DecisionOutput:
 
 
 def finish_draft(out: DecisionOutput, facts: list[dict[str, str]]) -> DecisionOutput:
-    """Append the required notes to the evidence draft if the model left them out."""
-    draft = out.evidence_summary.rstrip()
+    """Add the required notes: the sandbox test-data sentence always opens the draft (once, even if
+    the model wrote it elsewhere); the pattern note is appended when disputes are linked."""
+    draft = " ".join(out.evidence_summary.replace(SANDBOX_NOTE, " ").split())
     if any(f["text"].startswith(LINKED_PREFIX) for f in facts) and "not proof" not in draft.lower():
         draft += " " + PATTERN_NOTE
-    if SANDBOX_NOTE not in draft:
-        draft += " " + SANDBOX_NOTE
-    return out.model_copy(update={"evidence_summary": draft})
+    return out.model_copy(update={"evidence_summary": f"{SANDBOX_NOTE} {draft}".strip()})
 
 
 def _status_code(exc: Exception) -> int | None:

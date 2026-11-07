@@ -122,19 +122,32 @@ def test_forbidden_word_retry_then_clean_reply_succeeds():
 
 
 def test_prompt_defines_risk_score_and_wording():
-    assert "likelihood, 0 to 100, that this dispute is invalid or fraudulent based only on the" in SYSTEM_PROMPT
-    assert "LOW score" in SYSTEM_PROMPT and "share this device hash" in SYSTEM_PROMPT
+    prompt = " ".join(SYSTEM_PROMPT.split())
+    assert "risk_score is the likelihood, 0 to 100, that the buyer's claim is valid" in prompt
+    assert "HIGH means the evidence favours the buyer" in prompt
+    # anchors
+    assert "delivered with a buyer signature and no contradicting facts: 5 to 20" in prompt
+    assert "no carrier scan, or a label-only shipment: 70 to 90" in prompt
+    assert "at most 15 points" in prompt
+    # ACCEPT on evidence = high; cost-only ACCEPT scored on the facts
+    assert "If you ACCEPT because the evidence favours the buyer, the score must be HIGH" in prompt
+    assert "under the P2 threshold, score the facts as they are" in prompt
+    assert "invalid or fraudulent" not in prompt and "LOW score" not in prompt
+    assert "share this device hash" in prompt
     assert not any(w in r["text"].lower() for r in DEFAULT_RULES for w in ("fraud", "abuse", "ring "))
 
 
-def test_every_draft_gets_the_sandbox_note_once():
+def test_every_draft_starts_with_the_sandbox_note_once():
     r = decide("D1", FACTS, DEFAULT_RULES, "m", completion=FakeLLM(good()))
-    assert r.output.evidence_summary.endswith(SANDBOX_NOTE)
+    assert r.output.evidence_summary.startswith(SANDBOX_NOTE + " UPS delivered")
     assert r.output.evidence_summary.count(SANDBOX_NOTE) == 1
     assert PATTERN_NOTE not in r.output.evidence_summary  # no linked disputes in FACTS
-    already = good(evidence_summary="Delivered. " + SANDBOX_NOTE)
-    r2 = decide("D1", FACTS, DEFAULT_RULES, "m", completion=FakeLLM(already))
-    assert r2.output.evidence_summary.count(SANDBOX_NOTE) == 1
+    # The model put the note at the end, or in the middle: it moves to the start, once.
+    for body in ("Delivered. " + SANDBOX_NOTE, "Delivered. " + SANDBOX_NOTE + " Signed by the buyer."):
+        r2 = decide("D1", FACTS, DEFAULT_RULES, "m", completion=FakeLLM(good(evidence_summary=body)))
+        assert r2.output.evidence_summary.startswith(SANDBOX_NOTE + " Delivered.")
+        assert r2.output.evidence_summary.count(SANDBOX_NOTE) == 1
+        assert "  " not in r2.output.evidence_summary
 
 
 def test_linked_disputes_add_pattern_note_unless_draft_says_it():

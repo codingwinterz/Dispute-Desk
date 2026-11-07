@@ -78,7 +78,7 @@
         el("h2", { text: "Recommendation" }),
         el("div", { class: "verdict" },
           DD.decisionChip(rec),
-          el("span", { class: "score", title: "Likelihood, 0 to 100, that the dispute is invalid, based only on the evidence on file" },
+          el("span", { class: "score", title: "Likelihood, 0 to 100, that the buyer's claim is valid (you would lose if you defended), based only on the evidence on file" },
             el("strong", { text: String(rec.risk_score) }), "risk score"),
           el("span", { class: "meta", text: `Analyzed ${new Date(rec.created_at).toLocaleString()} by ${rec.model}` }))),
       el("section", { class: "panel" }, el("h2", { text: "Why" }), reasons, rulesBlock),

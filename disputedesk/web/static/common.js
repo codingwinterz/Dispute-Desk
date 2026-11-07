@@ -119,7 +119,7 @@ const DD = (() => {
   function riskNode(score) {
     if (score === null || score === undefined) return el("span", { class: "hint", text: "Not scored" });
     const bar = el("span", { class: "bar", "aria-hidden": "true" }, el("span", { style: `width:${Math.max(0, Math.min(100, score))}%` }));
-    return el("span", { class: "risk", title: "Likelihood the dispute is invalid, based only on the evidence on file" },
+    return el("span", { class: "risk", title: "Likelihood the buyer's claim is valid, based only on the evidence on file" },
       el("span", { text: String(score) }), bar);
   }
 

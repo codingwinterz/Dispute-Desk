@@ -50,7 +50,7 @@
     },
     {
       headerName: "Risk", field: "risk", minWidth: 120, flex: 0.7, enableCellChangeFlash: true,
-      headerTooltip: "Likelihood, 0 to 100, that the dispute is invalid, based only on the evidence on file",
+      headerTooltip: "Likelihood, 0 to 100, that the buyer's claim is valid (you would lose if you defended), based only on the evidence on file",
       cellRenderer: (p) => DD.riskNode(p.value),
     },
     {

@@ -135,10 +135,11 @@ For each dispute with full details, the agent decides **DEFEND** or **ACCEPT**:
    transaction shares the checkout device hash or IP.
 3. That result becomes numbered facts (`F1`…), each tagged `paypal` or `seeded`. The LLM (LiteLLM,
    model `LLM_MODEL`, default `gemini/gemini-3.5-flash-lite`) gets only those facts and the policy rules
-   (`P1`…P4), and returns JSON: decision, risk_score (likelihood 0–100 that the dispute is invalid or
-   fraudulent, based only on the supplied facts; a clean case accepted for cost reasons scores low),
-   3–5 reasoning points and a draft evidence summary. Every draft ends with a note that shipment and
-   device records are merchant-supplied sandbox test data; linked disputes are described only as
+   (`P1`…P4), and returns JSON: decision, risk_score (likelihood 0–100 that the buyer's claim is
+   valid, i.e. the merchant would lose if it defended, based only on the supplied facts: signed
+   delivery 5–20, no carrier scan 70–90, linked disputes move it at most 15; a cost-only ACCEPT is
+   still scored on the facts), 3–5 reasoning points and a draft evidence summary. Every draft starts
+   with a note that shipment and device records are merchant-supplied sandbox test data; linked disputes are described only as
    sharing a device hash or IP, and a pattern is not proof.
 4. The reply is validated. Every reasoning point must cite supplied IDs; an unknown ID or bad JSON
    or a forbidden word (fraud, abuse, abuser, ring) gets one retry, then the decision is stored as an
