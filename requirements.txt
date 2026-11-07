@@ -5,3 +5,5 @@ python-dotenv>=1.0
 python-multipart>=0.0.9
 pytest>=8.0
 respx>=0.21
+litellm>=1.50
+falkordb>=1.0
