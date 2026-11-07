@@ -38,6 +38,7 @@ from disputedesk.graph import GraphStore, connect, context_to_facts
 from disputedesk.http_log import make_client
 from disputedesk.policies import PolicySettings, PolicyStore, build_rules
 from disputedesk.poller import DisputePoller
+from disputedesk.submissions import BLOCKING, SubmissionStore, SubmitError, Submitter
 
 log = logging.getLogger("disputedesk.webhooks")
 
@@ -134,6 +135,7 @@ def create_app(
     decision_store: DecisionStore | None = None,
     policy_store: PolicyStore | None = None,
     draft_store: DraftStore | None = None,
+    submitter: Submitter | None = None,
 ) -> FastAPI:
     """Build the app. With no verifier, settings come from the environment and the real
     poller is started; tests inject their own pieces and get no poller unless they pass one."""
@@ -160,6 +162,14 @@ def create_app(
                             rules_provider=policy_store.rules)
     if analyzer is not None:
         bus.subscribe(analyzer.on_event)
+    if submitter is None:
+        submit_client = None
+        if settings is not None:
+            # Its own client so every approved write and its response is logged (redacted) apart.
+            submit_http = make_client(LOG_DIR / "submit_http.jsonl", secrets)
+            submit_client = DisputesClient(settings, TokenProvider(settings, submit_http), submit_http)
+        submitter = Submitter(dispute_store, decision_store, draft_store, SubmissionStore(dispute_store.path),
+                              submit_client, bus)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -226,8 +236,43 @@ def create_app(
             return JSONResponse({"error": "unknown dispute"}, status_code=404)
         decision = await run_in_threadpool(decision_store.get, dispute_id)
         saved = await run_in_threadpool(draft_store.get, dispute_id)
+        check = await run_in_threadpool(submitter.check, dispute_id)
         return JSONResponse({"dispute": dispute, "decision": _with_fact_refs(decision),
-                             "draft": effective_draft(saved, decision)})
+                             "draft": effective_draft(saved, decision), "submit": check})
+
+    # --- approved responses to PayPal (the only PayPal writes) ------------------------
+
+    @app.get("/api/submissions/{dispute_id}/dry-run")
+    async def submission_dry_run(dispute_id: str) -> JSONResponse:
+        """The exact request an approval would send, built from stored state. Never sent."""
+        if await run_in_threadpool(dispute_store.summary, dispute_id) is None:
+            return JSONResponse({"error": "unknown dispute"}, status_code=404)
+        return JSONResponse(await run_in_threadpool(submitter.dry_run, dispute_id))
+
+    @app.post("/api/submissions/{dispute_id}")
+    async def submit_response(dispute_id: str, request: Request) -> JSONResponse:
+        refused = _refuse_write(request)
+        if refused:
+            return refused
+        if await run_in_threadpool(dispute_store.summary, dispute_id) is None:
+            return JSONResponse({"error": "unknown dispute"}, status_code=404)
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict) or body.get("confirm") is not True:
+            # Nothing is sent without an explicit confirmation from the dialog.
+            return JSONResponse({"error": "confirmation required",
+                                 "message": 'Confirm in the dialog first (send {"confirm": true, "action", "text"}).'},
+                                status_code=400)
+        action, text = body.get("action"), body.get("text")
+        if not isinstance(action, str) or not isinstance(text, str):
+            return JSONResponse({"error": "invalid body", "message": "action and text are required."}, status_code=422)
+        try:
+            result = await run_in_threadpool(submitter.submit, dispute_id, action, text)
+        except SubmitError as exc:
+            return JSONResponse({"error": exc.code, "message": exc.message} | (exc.extra or {}), status_code=exc.http)
+        return JSONResponse(result)
 
     # --- merchant edits (local store only; never PayPal) ---------------------------
 
@@ -260,6 +305,11 @@ def create_app(
             return refused
         if await run_in_threadpool(dispute_store.summary, dispute_id) is None:
             return JSONResponse({"error": "unknown dispute"}, status_code=404)
+        sub = await run_in_threadpool(submitter.store.get, dispute_id)
+        if sub and sub["state"] in BLOCKING:
+            return JSONResponse({"error": "already_submitted",
+                                 "message": "This dispute's response has been sent (or its outcome is unknown); the draft can't change now."},
+                                status_code=409)
         try:
             body = await request.json()
             text = body["text"] if isinstance(body, dict) and isinstance(body.get("text"), str) else None
