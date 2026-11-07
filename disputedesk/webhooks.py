@@ -200,7 +200,13 @@ def create_app(
         # UNVERIFIED for non-default ngrok configs; put real auth here before any wider exposure.
         if request.url.path != WEBHOOK_PATH and "x-forwarded-for" in request.headers:
             return JSONResponse({"error": "local access only"}, status_code=403)
-        return await call_next(request)
+        response = await call_next(request)
+        # Dashboard pages and assets: always revalidate, so a browser never runs a stale page against
+        # a newer server (FileResponse/StaticFiles send Last-Modified but no Cache-Control).
+        path = request.url.path
+        if path == "/" or path == "/policies" or path.startswith(("/case/", "/static/")):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     # --- dashboard -------------------------------------------------------------
 
