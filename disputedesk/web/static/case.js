@@ -11,6 +11,8 @@
   const disputeId = decodeURIComponent(location.pathname.replace(/^\/case\//, "").replace(/\/$/, ""));
   let lastKey = "";
   let editorDirty = false;   // unsaved draft edits: the 5-second refresh must not replace them
+  let dialogOpen = false;    // the confirm dialog is open: don't re-render underneath it
+  let lastResult = null;     // outcome of the last approval on this page, shown after re-render
   const MAX_DRAFT = 2000;    // matches the server's cap (disputedesk/drafts.py)
 
   function svg(tag, attrs = {}, ...children) {
@@ -50,7 +52,7 @@
 
   // ---- decision panel --------------------------------------------------------------
 
-  function decisionPanels(d, rec, draft) {
+  function decisionPanels(d, rec, draft, submit) {
     if (!rec) {
       return [el("section", { class: "panel" },
         el("h2", { text: "Recommendation" }),
@@ -82,14 +84,26 @@
             el("strong", { text: String(rec.risk_score) }), "risk score"),
           el("span", { class: "meta", text: `Analyzed ${new Date(rec.created_at).toLocaleString()} by ${rec.model}` }))),
       el("section", { class: "panel" }, el("h2", { text: "Why" }), reasons, rulesBlock),
-      draftPanel(d, rec, draft),
+      // An accept sends the fixed note shown in the approval panel, so the evidence draft only
+      // matters for a defence.
+      rec.decision === "DEFEND" ? draftPanel(d, rec, draft, submit) : null,
+      approvePanel(d, submit),
     ];
   }
 
   // ---- draft editor ----------------------------------------------------------------------
 
-  function draftPanel(d, rec, draft) {
+  function draftPanel(d, rec, draft, submit) {
     const original = draft ? draft.text : rec.evidence_summary;
+    const locked = submit && submit.submission && ["sending", "succeeded", "unknown"].includes(submit.submission.state);
+    if (locked) {
+      return el("section", { class: "panel" },
+        el("h2", { text: "Response sent to PayPal" }),
+        el("p", { class: "hint", text: submit.submission.state === "succeeded"
+          ? "This is the text PayPal received. It can't be changed now."
+          : "This text was being sent when the outcome became unknown. It can't be changed now." }),
+        el("p", { class: "draft", text: original }));
+    }
     const text = el("textarea", { id: "draft-text", class: "draft-editor", rows: "12", maxlength: String(MAX_DRAFT),
                                   "aria-describedby": "draft-origin draft-count", spellcheck: "true" });
     text.value = original;
@@ -155,10 +169,133 @@
       newer,
       text,
       el("div", { class: "editor-row" }, count),
-      el("div", { class: "approve-row" }, save, restore, fix, status),
-      el("div", { class: "approve-row" },
-        el("button", { class: "primary", type: "button", disabled: true, "aria-describedby": "approve-hint", text: "Approve and send to PayPal" }),
-        el("p", { class: "hint", id: "approve-hint", text: "Approving will send the saved draft. Sending responses to PayPal isn't switched on yet, so nothing is submitted from this page." })));
+      el("div", { class: "approve-row" }, save, restore, fix, status));
+  }
+
+  // ---- approval (the only path that writes to PayPal) ------------------------------------
+
+  function verificationNote(submit) {
+    if (submit.unverified) {
+      return el("p", { class: "notice unverified" },
+        el("strong", { text: "UNVERIFIED. " }),
+        "PayPal's docs don't show an evidence submission with notes and no file. This app hasn't had one accepted yet, so the first approval will show whether PayPal takes it.");
+    }
+    if (submit.verified) {
+      return el("p", { class: "hint", text: `Notes-only evidence was accepted by PayPal on ${new Date(submit.verified.verified_at).toLocaleString()} (dispute ${submit.verified.dispute_id}).` });
+    }
+    return null;
+  }
+
+  function submissionStatus(submit) {
+    const sub = submit.submission;
+    const lines = [];
+    if (lastResult && lastResult.ok) {
+      lines.push(el("p", { class: "result ok", role: "status", text: lastResult.message }));
+    } else if (lastResult) {
+      lines.push(errorBox(lastResult.message, lastResult.paypal));
+    }
+    if (sub && sub.state === "succeeded" && !(lastResult && lastResult.ok)) {
+      lines.push(el("p", { class: "result ok", text: `Sent to PayPal on ${new Date(sub.finished_at).toLocaleString()} (HTTP ${sub.http_status}).` }));
+    }
+    if (sub && sub.state === "rejected" && !lastResult) {
+      lines.push(errorBox(`PayPal refused the last attempt (HTTP ${sub.http_status}). Nothing changed on PayPal; you can fix the problem and try again.`, sub.paypal_error));
+    }
+    return lines;
+  }
+
+  function errorBox(message, paypal) {
+    const details = paypal ? [paypal.name, paypal.message, ...(paypal.issues || []), paypal.debug_id ? `debug_id ${paypal.debug_id}` : null].filter(Boolean) : [];
+    return el("div", { class: "result error", role: "alert" },
+      el("p", { text: message }),
+      details.length ? el("p", { class: "hint", text: `PayPal said: ${details.join(". ")}` }) : null);
+  }
+
+  function approvePanel(d, submit) {
+    if (!submit || !submit.action) return null;
+    const reasons = submit.reasons || [];
+    const approve = el("button", { class: "primary", type: "button", disabled: !submit.can_submit,
+                                   "aria-describedby": "approve-reasons", text: submit.label });
+    approve.addEventListener("click", () => openConfirm(d, submit));
+    const dryButton = el("button", { class: "secondary", type: "button", text: "Show the exact request (dry run)" });
+    const dryOut = el("div", { class: "dry-run", hidden: true, "aria-live": "polite" });
+    dryButton.addEventListener("click", async () => {
+      dryButton.disabled = true;
+      try {
+        const resp = await fetch(`/api/submissions/${encodeURIComponent(d.dispute_id)}/dry-run`, { cache: "no-store" });
+        const body = await resp.json();
+        if (!resp.ok) throw new Error(body.message || body.error || `HTTP ${resp.status}`);
+        const r = body.request;
+        dryOut.replaceChildren(
+          el("p", { class: "hint", text: "Built from the last stored state of this dispute. Nothing was sent; approving re-checks with PayPal first. The token is shown redacted." }),
+          r ? el("pre", { class: "request", text: [`${r.method} ${r.url}`, ...Object.entries(r.headers).map(([k, v]) => `${k}: ${v}`), "", r.body].join("\n") })
+            : el("p", { class: "hint", text: "There is no request to build until the agent has a recommendation." }));
+      } catch (err) {
+        dryOut.replaceChildren(el("p", { class: "error-text", text: `Couldn't build the dry run: ${err.message}` }));
+      } finally {
+        dryOut.hidden = false;
+        dryButton.disabled = false;
+      }
+    });
+    return el("section", { class: "panel" },
+      el("h2", { text: "Approve and send" }),
+      el("p", { class: "hint", text: submit.action === "provide_evidence"
+        ? "Sends your saved draft to PayPal as evidence (type OTHER, notes only). PayPal then reviews the case; you can't change the evidence afterwards."
+        : "Accepts the claim with the note below. The dispute closes in the buyer's favour and PayPal refunds the buyer from your sandbox balance." }),
+      submit.action === "accept_claim" ? el("p", { class: "draft", text: submit.text }) : null,
+      submit.action === "provide_evidence" ? verificationNote(submit) : null,
+      ...submissionStatus(submit),
+      el("div", { class: "approve-row" }, approve, dryButton),
+      reasons.length
+        ? el("ul", { class: "reasons-off", id: "approve-reasons" }, ...reasons.map((r) => el("li", { text: r })))
+        : el("p", { class: "hint", id: "approve-reasons", text: "Nothing is sent until you confirm in the next step." }),
+      dryOut);
+  }
+
+  function openConfirm(d, submit) {
+    const amount = DD.money(d.amount);
+    const cancel = el("button", { class: "secondary", type: "button", text: "Cancel", autofocus: true });
+    const confirm = el("button", { class: "primary", type: "button", text: submit.label });
+    const status = el("p", { class: "hint", "aria-live": "polite" });
+    const dialog = el("dialog", { class: "confirm", "aria-labelledby": "confirm-title" },
+      el("h2", { id: "confirm-title", text: `${submit.label}?` }),
+      el("dl", { class: "confirm-facts" },
+        el("dt", { text: "Action" }), el("dd", { text: submit.action === "provide_evidence" ? "Provide evidence (type OTHER, notes only)" : "Accept claim" }),
+        el("dt", { text: "Dispute" }), el("dd", { class: "num", text: d.dispute_id }),
+        el("dt", { text: "Amount" }), el("dd", { class: "num", text: amount })),
+      el("p", { class: "label", text: submit.action === "provide_evidence" ? "Notes PayPal will receive, exactly:" : "Note PayPal will receive, exactly:" }),
+      el("pre", { class: "confirm-text", text: submit.text }),
+      submit.action === "provide_evidence" ? verificationNote(submit) : null,
+      el("p", { class: "hint", text: submit.action === "provide_evidence"
+        ? "This sends the evidence to the PayPal sandbox now. It can't be withdrawn."
+        : `This accepts the claim in the PayPal sandbox now and refunds ${amount} to the buyer. It can't be undone.` }),
+      el("div", { class: "approve-row" }, confirm, cancel, status));
+    const close = () => { dialog.close(); };
+    dialog.addEventListener("close", () => { dialogOpen = false; dialog.remove(); });
+    cancel.addEventListener("click", close);
+    confirm.addEventListener("click", async () => {
+      confirm.disabled = true;
+      cancel.disabled = true;
+      status.textContent = "Sending to PayPal…";
+      let result;
+      try {
+        const resp = await fetch(`/api/submissions/${encodeURIComponent(d.dispute_id)}`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirm: true, action: submit.action, text: submit.text }) });
+        const body = await resp.json().catch(() => ({}));
+        result = resp.ok
+          ? { ok: true, message: `Sent at ${new Date().toLocaleTimeString()}. PayPal now shows: ${DD.statusLabel(body.dispute && body.dispute.status)}.` }
+          : { ok: false, message: body.message || body.error || `The server answered HTTP ${resp.status}.`, paypal: body.paypal };
+      } catch {
+        result = { ok: false, message: "Can't reach the DisputeDesk server, so the outcome isn't known here. Reload the page to see the dispute's current state." };
+      }
+      lastResult = result;
+      close();
+      lastKey = "";
+      await load();
+    });
+    document.body.append(dialog);
+    dialogOpen = true;
+    dialog.showModal();
   }
 
   function citeTitle(rec, id) {
@@ -266,10 +403,10 @@
     }
     const key = JSON.stringify(body);
     if (key === lastKey) return; // nothing changed; keep scroll position and any open anchor
-    if (editorDirty) return;     // never replace unsaved draft edits; the refresh after saving shows changes
+    if (editorDirty || dialogOpen) return;  // never replace unsaved edits or an open confirm dialog
     lastKey = key;
-    const { dispute, decision, draft } = body;
-    const left = el("div", {}, ...decisionPanels(dispute, decision, draft));
+    const { dispute, decision, draft, submit } = body;
+    const left = el("div", {}, ...decisionPanels(dispute, decision, draft, submit));
     const right = el("div", {}, ...((decision && decision.status === "ok" && graphPanel(decision)) || [
       el("section", { class: "panel" }, el("h2", { text: "Evidence path" }),
         el("p", { class: "hint", text: "The graph path appears once the agent has a recommendation for this dispute." }))]));

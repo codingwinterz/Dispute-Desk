@@ -286,3 +286,33 @@ button[hidden] { display: none; }
 @media (max-width: 900px) {
   .policy-body, .agent-reads { margin-left: 0; }
 }
+
+/* ---- approval panel and confirm dialog ------------------------------------------ */
+
+.notice.unverified { border-color: var(--urgent); }
+.notice.unverified strong { color: var(--urgent); }
+.reasons-off { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; display: grid; gap: 4px; max-width: 64ch; }
+.result { margin: 12px 0 0; padding: 10px 14px; border-radius: var(--r-sm); font-size: 14px; }
+.result p { margin: 0; }
+.result p + p { margin-top: 6px; }
+.result.ok { border: 1px solid var(--accent); }
+.result.error { border: 1px solid var(--urgent); background: rgba(240, 113, 106, 0.08); }
+.dry-run { margin-top: 12px; }
+.dry-run[hidden] { display: none; }
+pre.request, pre.confirm-text {
+  margin: 8px 0 0; padding: 12px 14px; background: var(--ink); border: 1px solid var(--rule);
+  border-radius: var(--r-sm); white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.5;
+  max-height: 320px; overflow: auto;
+}
+
+dialog.confirm {
+  width: min(640px, calc(100vw - 32px)); padding: 24px; color: var(--text); background: var(--panel);
+  border: 1px solid var(--accent); border-radius: var(--r-md);
+}
+dialog.confirm::backdrop { background: rgba(8, 11, 16, 0.72); }
+dialog.confirm h2 { font-size: 20px; margin: 0 0 14px; }
+.confirm-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0 0 14px; }
+.confirm-facts dt { color: var(--muted); }
+.confirm-facts dd { margin: 0; font-weight: 600; }
+dialog.confirm .label { margin: 0; font-size: 14px; color: var(--muted); }
+pre.confirm-text { font-family: var(--font); font-size: 14px; }

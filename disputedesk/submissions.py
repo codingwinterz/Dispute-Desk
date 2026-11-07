@@ -239,7 +239,8 @@ class Submitter:
     @staticmethod
     def _blocked_message(sub: dict[str, Any]) -> str:
         if sub["state"] == "succeeded":
-            return f"Already sent to PayPal ({sub['action'].replace('_', ' ')}) on {sub['finished_at']}."
+            when = (sub["finished_at"] or "")[:16].replace("T", " ")
+            return f"Already sent to PayPal ({sub['action'].replace('_', ' ')}) on {when} UTC."
         if sub["state"] == "sending":
             return "A submission for this dispute is in progress."
         return ("The last attempt's outcome is unknown (network error or PayPal server error), so another "
