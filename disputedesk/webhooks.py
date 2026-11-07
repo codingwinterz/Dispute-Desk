@@ -1,6 +1,7 @@
-"""PayPal webhook receiver: POST /webhooks/paypal.
+"""DisputeDesk app: PayPal webhook receiver (POST /webhooks/paypal), dashboard and read-only API.
 
 Run with:  uvicorn --factory disputedesk.webhooks:create_app --port 8000
+Dashboard: http://127.0.0.1:8000/  (queue)  and  /case/{dispute_id}. Local-only, like /api/*.
 
 The app also starts the dispute poller (disputedesk.poller) as a background task. Disputes seen
 through either path go through one DisputeStore, so dispute_detected is emitted once per dispute.
@@ -20,7 +21,8 @@ from typing import Any, Protocol
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from disputedesk.analyzer import Analyzer
 from disputedesk.auth import TokenProvider
@@ -29,11 +31,14 @@ from disputedesk.decision_store import DecisionStore
 from disputedesk.dispute_store import DisputeStore, safe_filename
 from disputedesk.disputes import DisputesClient
 from disputedesk.events import DisputeDetected, EventBus
-from disputedesk.graph import GraphStore, connect
+from disputedesk.graph import GraphStore, connect, context_to_facts
 from disputedesk.http_log import make_client
 from disputedesk.poller import DisputePoller
 
 log = logging.getLogger("disputedesk.webhooks")
+
+WEBHOOK_PATH = "/webhooks/paypal"  # the only route reachable through the ngrok tunnel
+WEB_DIR = Path(__file__).resolve().parent / "web"  # dashboard HTML, CSS and JS (no build step)
 
 # Header -> verify-webhook-signature body field.
 # https://developer.paypal.com/api/webhooks/v1/#verify-webhook-signature_post
@@ -122,6 +127,7 @@ def create_app(
     bus: EventBus | None = None,
     poller: DisputePoller | None = None,
     analyzer: Analyzer | None = None,
+    decision_store: DecisionStore | None = None,
 ) -> FastAPI:
     """Build the app. With no verifier, settings come from the environment and the real
     poller is started; tests inject their own pieces and get no poller unless they pass one."""
@@ -133,6 +139,8 @@ def create_app(
         verifier = PayPalSignatureVerifier(settings, TokenProvider(settings, http), http)
     store = store or EventStore(LOG_DIR)
     dispute_store = dispute_store or DisputeStore(DISPUTE_DB)
+    # Decisions live in the same SQLite file as the disputes.
+    decision_store = decision_store or DecisionStore(dispute_store.path)
     bus = bus or EventBus()
     if poller is None and settings is not None:
         poll_http = make_client(LOG_DIR / "poll_http.jsonl", secrets)
@@ -140,8 +148,7 @@ def create_app(
         poller = DisputePoller(poll_client, dispute_store, bus, LOG_DIR / "disputes", settings.poll_seconds)
     if analyzer is None and settings is not None:
         agent = load_agent_settings()
-        analyzer = Analyzer(dispute_store, DecisionStore(DISPUTE_DB), lambda: GraphStore(connect(agent)),
-                            agent.llm_model)
+        analyzer = Analyzer(dispute_store, decision_store, lambda: GraphStore(connect(agent)), agent.llm_model)
     if analyzer is not None:
         bus.subscribe(analyzer.on_event)
 
@@ -161,22 +168,53 @@ def create_app(
             if analyzer:
                 await run_in_threadpool(analyzer.stop)
 
-    app = FastAPI(title="DisputeDesk webhook receiver", lifespan=lifespan)
+    app = FastAPI(title="DisputeDesk", lifespan=lifespan)
     app.state.bus = bus
     app.state.dispute_store = dispute_store
+    app.state.decision_store = decision_store
+
+    @app.middleware("http")
+    async def local_only(request: Request, call_next: Any) -> Any:
+        # Only the PayPal webhook is public. The dashboard, its static files and every /api route
+        # are local-only. This app is exposed through ngrok for webhooks, and ngrok adds
+        # X-Forwarded-For to every tunnelled request, so such requests are refused here.
+        # UNVERIFIED for non-default ngrok configs; put real auth here before any wider exposure.
+        if request.url.path != WEBHOOK_PATH and "x-forwarded-for" in request.headers:
+            return JSONResponse({"error": "local access only"}, status_code=403)
+        return await call_next(request)
+
+    # --- dashboard -------------------------------------------------------------
+
+    app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
+
+    @app.get("/", include_in_schema=False)
+    async def queue_page() -> FileResponse:
+        return FileResponse(WEB_DIR / "queue.html")
+
+    @app.get("/case/{dispute_id}", include_in_schema=False)
+    async def case_page(dispute_id: str) -> FileResponse:
+        # The page fetches /api/decisions/{id} itself; the ID never touches the HTML.
+        return FileResponse(WEB_DIR / "case.html")
+
+    # --- read-only API (local store only; no PayPal calls) -----------------------
+
+    def _queue_rows() -> list[dict[str, Any]]:
+        briefs = decision_store.briefs()
+        return [row | {"decision": briefs.get(row["dispute_id"])} for row in dispute_store.summaries()]
 
     @app.get("/api/disputes")
-    async def stored_disputes(request: Request) -> JSONResponse:
-        # Read-only view of the local store for the dashboard; makes no PayPal call.
-        # This app is exposed through ngrok for webhooks, and ngrok adds X-Forwarded-For to every
-        # tunnelled request, so such requests are refused to keep dispute data off the tunnel.
-        # UNVERIFIED for non-default ngrok configs; put real auth here before any wider exposure.
-        if "x-forwarded-for" in request.headers:
-            return JSONResponse({"error": "local access only"}, status_code=403)
-        disputes = await run_in_threadpool(dispute_store.summaries)
-        return JSONResponse({"disputes": disputes})
+    async def stored_disputes() -> JSONResponse:
+        return JSONResponse({"disputes": await run_in_threadpool(_queue_rows)})
 
-    @app.post("/webhooks/paypal")
+    @app.get("/api/decisions/{dispute_id}")
+    async def dispute_decision(dispute_id: str) -> JSONResponse:
+        dispute = await run_in_threadpool(dispute_store.summary, dispute_id)
+        if dispute is None:
+            return JSONResponse({"error": "unknown dispute"}, status_code=404)
+        decision = await run_in_threadpool(decision_store.get, dispute_id)
+        return JSONResponse({"dispute": dispute, "decision": _with_fact_refs(decision)})
+
+    @app.post(WEBHOOK_PATH)
     async def paypal_webhook(request: Request) -> JSONResponse:
         raw = await request.body()
         headers = {k.lower(): v for k, v in request.headers.items()}
@@ -184,6 +222,23 @@ def create_app(
         return await run_in_threadpool(_handle, headers, raw, verifier, store, dispute_store, bus)
 
     return app
+
+
+def _with_fact_refs(decision: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Decisions stored before facts carried a graph `ref` get it back from their own graph snapshot.
+    Facts are numbered deterministically from that snapshot; a ref is copied only when the fact ID
+    and text both match, so a mismatch leaves the fact without a ref rather than mislabelled."""
+    if not decision or not decision.get("facts") or not decision.get("graph_context"):
+        return decision
+    if all(f.get("ref") for f in decision["facts"]):
+        return decision
+    try:
+        rebuilt = {f["id"]: f for f in context_to_facts(decision["graph_context"])}
+    except (KeyError, TypeError):
+        return decision
+    facts = [f if f.get("ref") or rebuilt.get(f["id"], {}).get("text") != f.get("text")
+             else f | {"ref": rebuilt[f["id"]]["ref"]} for f in decision["facts"]]
+    return decision | {"facts": facts}
 
 
 def _detect_from_webhook(event: dict[str, Any], dispute_store: DisputeStore, bus: EventBus) -> None:
