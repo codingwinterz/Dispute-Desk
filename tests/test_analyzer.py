@@ -153,3 +153,28 @@ def test_app_lifespan_starts_sweeps_and_stops_analyzer(stores, tmp_path):
         assert analyzer.on_event in bus._subscribers
     assert not analyzer._thread.is_alive()
     assert decide.calls == ["PP-R-TST-1"]
+
+
+def test_analyze_cli_dispute_id_reruns_a_decided_dispute(stores, monkeypatch, capsys):
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("analyze_cli", Path(__file__).resolve().parent.parent / "scripts" / "analyze.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+
+    disputes, decisions = stores
+    disputes.claim("PP-R-TST-1", "poll", sample_dispute(), full=True)
+    decide = FakeDecide()
+    analyzer = Analyzer(disputes, decisions, lambda: GraphStore(FakeGraph([context_row()])), "m", decide_fn=decide)
+    analyzer.analyze("PP-R-TST-1")  # already decided once
+    monkeypatch.setattr(cli, "DisputeStore", lambda _p: disputes)
+    monkeypatch.setattr(cli, "DecisionStore", lambda _p: decisions)
+    monkeypatch.setattr(cli, "Analyzer", lambda *a, **k: analyzer)
+    monkeypatch.setattr(disputes, "close", lambda: None)
+    monkeypatch.setattr(decisions, "close", lambda: None)
+    monkeypatch.setattr("sys.argv", ["analyze.py", "--dispute-id", "PP-R-TST-1"])
+
+    assert cli.main() == 0
+    assert decide.calls == ["PP-R-TST-1", "PP-R-TST-1"]  # re-run without --force
+    assert "already decided" not in capsys.readouterr().out

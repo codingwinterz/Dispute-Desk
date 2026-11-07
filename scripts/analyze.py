@@ -1,7 +1,7 @@
 """Run the decision step for stored disputes, from the command line.
 
     python scripts/analyze.py --all --facts-only     (graph facts only; no LLM call)
-    python scripts/analyze.py --dispute-id PP-R-...  (one LLM decision, stored in data/disputedesk.db)
+    python scripts/analyze.py --dispute-id PP-R-...  (re-run one dispute: always a fresh LLM decision)
     python scripts/analyze.py --all [--force]        (--force re-decides disputes that already have one)
 
 Reads disputes from data/disputedesk.db and context from the local FalkorDB graph (seed it first
@@ -34,7 +34,7 @@ def print_decision(rec: dict) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     target = parser.add_mutually_exclusive_group(required=True)
-    target.add_argument("--dispute-id", metavar="ID")
+    target.add_argument("--dispute-id", metavar="ID", help="re-run one dispute (replaces its stored decision)")
     target.add_argument("--all", action="store_true", help="every stored dispute with full details")
     parser.add_argument("--facts-only", action="store_true", help="print graph facts; do not call the LLM")
     parser.add_argument("--force", action="store_true", help="re-decide even if an ok decision exists")
@@ -57,7 +57,8 @@ def main() -> int:
                 for f in context_to_facts(ctx):
                     print(f"  {f['id']} [{f['source']}] {f['text']}")
                 continue
-            outcome = analyzer.analyze(dispute_id, force=args.force)
+            # Naming one dispute means re-running it, so --dispute-id implies --force.
+            outcome = analyzer.analyze(dispute_id, force=args.force or bool(args.dispute_id))
             rec = decisions.get(dispute_id)
             if outcome == "already_decided":
                 print("  (already decided; use --force to re-run)")
