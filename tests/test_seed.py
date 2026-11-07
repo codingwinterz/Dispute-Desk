@@ -86,3 +86,10 @@ def test_store_get_and_full_disputes(tmp_path):
     assert store.get("A") == {"dispute_id": "A"} and store.get("nope") is None
     assert set(store.full_disputes()) == {"A"}
     store.close()
+
+
+def test_shipment_dated_before_transaction_is_flagged(data):
+    disputes = stored()
+    disputes["PP-R-JTQ-10195324"]["disputed_transactions"][0]["create_time"] = "2026-12-01T00:00:00.000Z"
+    report = seed_graph(GraphStore(FakeGraph()), disputes, data)
+    assert any(line.startswith("warning PP-R-JTQ-10195324: seeded shipped_at") for line in report)

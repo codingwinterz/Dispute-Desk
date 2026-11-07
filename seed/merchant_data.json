@@ -8,8 +8,8 @@
         "carrier": "UPS",
         "tracking_id": "1ZSEED0000000001",
         "status": "DELIVERED",
-        "shipped_at": "2026-10-29",
-        "delivered_at": "2026-11-01",
+        "shipped_at": "2026-10-31",
+        "delivered_at": "2026-11-03",
         "signed_by_buyer": true,
         "destination": "Austin, TX, US"
       },
@@ -27,7 +27,7 @@
         "carrier": "USPS",
         "tracking_id": "9400SEED00000002",
         "status": "LABEL_CREATED",
-        "last_scan": "Label created 2026-11-04; no carrier scan since",
+        "last_scan": "Label created 2026-11-06; no carrier scan since",
         "destination": "Denver, CO, US"
       },
       "telemetry": {
@@ -44,8 +44,8 @@
         "carrier": "FedEx",
         "tracking_id": "7700SEED00000003",
         "status": "DELIVERED",
-        "shipped_at": "2026-10-28",
-        "delivered_at": "2026-10-31",
+        "shipped_at": "2026-11-05",
+        "delivered_at": "2026-11-06",
         "signed_by_buyer": true,
         "destination": "Miami, FL, US"
       },
@@ -63,8 +63,8 @@
         "carrier": "USPS",
         "tracking_id": "9400SEED00000004",
         "status": "DELIVERED",
-        "shipped_at": "2026-11-02",
-        "delivered_at": "2026-11-05",
+        "shipped_at": "2026-11-06",
+        "delivered_at": "2026-11-07",
         "signed_by_buyer": false,
         "destination": "Portland, OR, US"
       },
@@ -86,7 +86,12 @@
       "amount": 85.0,
       "currency": "USD",
       "create_time": "2026-08-14T16:20:00Z",
-      "telemetry": {"id": "SEED-TEL-0001", "ip": "198.51.100.41", "device_hash": "dev-9e0d55", "geo": "Miami, FL, US"}
+      "telemetry": {
+        "id": "SEED-TEL-0001",
+        "ip": "198.51.100.41",
+        "device_hash": "dev-9e0d55",
+        "geo": "Miami, FL, US"
+      }
     },
     {
       "dispute_id": "SEED-D-0002",
@@ -97,7 +102,12 @@
       "amount": 120.0,
       "currency": "USD",
       "create_time": "2026-09-22T11:05:00Z",
-      "telemetry": {"id": "SEED-TEL-0002", "ip": "198.51.100.42", "device_hash": "dev-9e0d55", "geo": "Miami, FL, US"}
+      "telemetry": {
+        "id": "SEED-TEL-0002",
+        "ip": "198.51.100.42",
+        "device_hash": "dev-9e0d55",
+        "geo": "Miami, FL, US"
+      }
     },
     {
       "dispute_id": "SEED-D-0003",
@@ -108,7 +118,12 @@
       "amount": 30.0,
       "currency": "USD",
       "create_time": "2026-07-03T09:40:00Z",
-      "telemetry": {"id": "SEED-TEL-0003", "ip": "198.51.100.200", "device_hash": "dev-c0ffee", "geo": "Seattle, WA, US"}
+      "telemetry": {
+        "id": "SEED-TEL-0003",
+        "ip": "198.51.100.200",
+        "device_hash": "dev-c0ffee",
+        "geo": "Seattle, WA, US"
+      }
     }
   ]
 }
