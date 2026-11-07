@@ -164,3 +164,12 @@ def test_case_page_loads_pinned_three_with_sri_and_flat_fallback():
     assert "prefers-reduced-motion" in js and "forceContextLoss" in js and "visibilitychange" in js
     case_js = (WEB / "static" / "case.js").read_text(encoding="utf-8")
     assert "unavailableReason" in case_js and '"pagehide", disposeGraph' in case_js
+
+
+def test_overview_page_is_served_local_only_and_in_nav(client):
+    resp = client.get("/overview")
+    assert resp.status_code == 200 and 'id="overview"' in resp.text and resp.headers["cache-control"] == "no-cache"
+    assert client.get("/overview", headers=TUNNEL).status_code == 403
+    common = client.get("/static/common.js").text
+    assert '["overview", "/overview", "Overview"]' in common
+    assert "fetch(\"/api/disputes\"" in client.get("/static/overview.js").text  # existing API only

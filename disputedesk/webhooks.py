@@ -44,6 +44,8 @@ log = logging.getLogger("disputedesk.webhooks")
 
 WEBHOOK_PATH = "/webhooks/paypal"  # the only route reachable through the ngrok tunnel
 WEB_DIR = Path(__file__).resolve().parent / "web"  # dashboard HTML, CSS and JS (no build step)
+# Dashboard pages: path -> HTML file. Each page reads only the existing read-only API.
+PAGES = {"/": "queue.html", "/overview": "overview.html", "/policies": "policies.html"}
 
 # Header -> verify-webhook-signature body field.
 # https://developer.paypal.com/api/webhooks/v1/#verify-webhook-signature_post
@@ -204,7 +206,7 @@ def create_app(
         # Dashboard pages and assets: always revalidate, so a browser never runs a stale page against
         # a newer server (FileResponse/StaticFiles send Last-Modified but no Cache-Control).
         path = request.url.path
-        if path == "/" or path == "/policies" or path.startswith(("/case/", "/static/")):
+        if path in PAGES or path.startswith(("/case/", "/static/")):
             response.headers["Cache-Control"] = "no-cache"
         return response
 
@@ -212,13 +214,13 @@ def create_app(
 
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
-    @app.get("/", include_in_schema=False)
-    async def queue_page() -> FileResponse:
-        return FileResponse(WEB_DIR / "queue.html")
+    def _page(filename: str) -> Any:
+        async def page() -> FileResponse:
+            return FileResponse(WEB_DIR / filename)
+        return page
 
-    @app.get("/policies", include_in_schema=False)
-    async def policies_page() -> FileResponse:
-        return FileResponse(WEB_DIR / "policies.html")
+    for page_path, page_file in PAGES.items():
+        app.add_api_route(page_path, _page(page_file), methods=["GET"], include_in_schema=False)
 
     @app.get("/case/{dispute_id}", include_in_schema=False)
     async def case_page(dispute_id: str) -> FileResponse:

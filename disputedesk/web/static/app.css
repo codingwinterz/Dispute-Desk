@@ -411,3 +411,78 @@ button.secondary.small { font-size: 13px; padding: 6px 10px; }
 .shape.sphere { border-radius: 50%; background: #8ea3bf; }
 .shape.crystal { transform: rotate(45deg) scale(0.8); border: 1.5px solid #b9a57a; }
 .shape.glow { border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px 2px rgba(226, 184, 92, 0.6); }
+
+/* ---- depth: queue grid, chips, overview ------------------------------------------- */
+/* The grid sits one layer above the page; rows keep AG Grid's own rendering (no transforms on
+   virtualised rows, so scrolling and updates stay as fast as before). */
+#grid.ag-theme-quartz-dark {
+  /* beat the theme's own variables (same selector weight otherwise) */
+  --ag-row-hover-color: #1d2633;
+  --ag-selected-row-background-color: #1f2834;
+  border-radius: var(--r-md);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 18px 40px -18px rgba(0, 0, 0, 0.75), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
+}
+.ag-theme-quartz-dark .ag-row-hover { box-shadow: inset 3px 0 0 var(--accent); }
+.chip.defend { box-shadow: 0 0 0 1px rgba(226, 184, 92, 0.4), 0 0 14px -2px rgba(226, 184, 92, 0.55); }
+.chip.accept { box-shadow: 0 0 12px -4px rgba(230, 233, 238, 0.45); }
+.panel { box-shadow: 0 16px 36px -22px rgba(0, 0, 0, 0.8); }
+
+.hero-deadline {
+  position: relative; padding: 26px 28px; border-radius: var(--r-md); background: var(--panel-2);
+  border: 1px solid var(--rule);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 28px 60px -28px rgba(0, 0, 0, 0.85);
+}
+/* the folder tab above the hero */
+.hero-deadline::before {
+  content: ""; position: absolute; top: -9px; left: 28px; width: 120px; height: 10px;
+  background: var(--accent); border-radius: 6px 6px 0 0; opacity: 0.9;
+}
+.hero-label { margin: 0 0 10px; color: var(--muted); font-weight: 600; }
+.hero-row { display: flex; flex-wrap: wrap; align-items: center; gap: 18px 40px; }
+.hero-count .countdown { font-size: 56px; line-height: 1; letter-spacing: -0.02em; }
+.hero-count .countdown .sub { font-size: 14px; margin-top: 6px; letter-spacing: 0; }
+.hero-case { display: grid; gap: 8px; }
+.hero-id { font-size: 22px; font-weight: 700; color: var(--text); text-decoration: none; }
+.hero-id:hover { color: var(--accent); }
+.hero-chip { color: var(--muted); font-size: 14px; display: inline-flex; align-items: center; gap: 8px; }
+
+.figure-strip {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 26px 0 34px;
+  border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+}
+.figure { display: grid; gap: 2px; padding: 18px 20px; }
+.figure + .figure { border-left: 1px solid var(--rule); }
+.figure-value { font-size: 30px; font-weight: 700; line-height: 1.1; }
+.figure.urgent .figure-value { color: var(--urgent); }
+.figure-label { color: var(--text); font-weight: 600; }
+.figure-note { color: var(--muted); font-size: 13px; }
+
+.folders h2 { margin-bottom: 2px; }
+.folder-stack { display: grid; gap: 10px; margin-top: 14px; perspective: 900px; }
+.folder-row {
+  display: grid; grid-template-columns: 170px minmax(0, 1fr) auto; align-items: center; gap: 18px;
+  padding: 14px 18px; border-radius: var(--r-md); background: var(--panel); border: 1px solid var(--rule);
+  color: var(--text); text-decoration: none; transform-origin: 50% 100%;
+  box-shadow: 0 10px 24px -18px rgba(0, 0, 0, 0.9);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.folder-row:hover, .folder-row:focus-visible {
+  transform: translateY(-3px) rotateX(4deg);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--rule));
+  box-shadow: 0 22px 36px -20px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(226, 184, 92, 0.08);
+}
+.folder-main { display: grid; gap: 4px; min-width: 0; }
+.folder-id { font-weight: 700; }
+.folder-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; color: var(--muted); font-size: 14px; }
+.folder-side { display: flex; align-items: center; gap: 14px; }
+
+@media (max-width: 900px) {
+  .figure-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .figure:nth-child(3) { border-left: 0; }
+  .figure:nth-child(n+3) { border-top: 1px solid var(--rule); }
+  .folder-row { grid-template-columns: 1fr; }
+  .hero-count .countdown { font-size: 42px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .folder-row:hover, .folder-row:focus-visible { transform: none; }
+}
