@@ -147,3 +147,20 @@ def test_old_decisions_get_fact_refs_from_their_graph_snapshot(client, stores):
     assert facts[0]["ref"] == "dispute"
     assert "ref" not in facts[1]  # text mismatch: no guess
     assert facts[4]["ref"] == "shipment"
+
+
+def test_pages_and_assets_always_revalidate(client):
+    for path in ("/", "/policies", "/case/PP-R-ANY", "/static/case.js", "/static/graph3d.js"):
+        assert client.get(path).headers["cache-control"] == "no-cache", path
+    assert "cache-control" not in client.get("/api/disputes").headers  # API responses unchanged
+
+
+def test_case_page_loads_pinned_three_with_sri_and_flat_fallback():
+    html = (WEB / "case.html").read_text(encoding="utf-8")
+    assert 'src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"' in html
+    assert 'integrity="sha512-' in html and 'crossorigin="anonymous"' in html
+    assert html.index("three.min.js") < html.index("graph3d.js") < html.index("case.js")
+    js = (WEB / "static" / "graph3d.js").read_text(encoding="utf-8")
+    assert "prefers-reduced-motion" in js and "forceContextLoss" in js and "visibilitychange" in js
+    case_js = (WEB / "static" / "case.js").read_text(encoding="utf-8")
+    assert "unavailableReason" in case_js and '"pagehide", disposeGraph' in case_js

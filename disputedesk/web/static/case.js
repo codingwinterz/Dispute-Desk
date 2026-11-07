@@ -13,6 +13,8 @@
   let editorDirty = false;   // unsaved draft edits: the 5-second refresh must not replace them
   let dialogOpen = false;    // the confirm dialog is open: don't re-render underneath it
   let lastResult = null;     // outcome of the last approval on this page, shown after re-render
+  let graph3d = null;        // live three.js view; disposed before every re-render and on leaving
+  let pendingGraph = null;   // a 3D view to mount once its container is in the page
   const MAX_DRAFT = 2000;    // matches the server's cap (disputedesk/drafts.py)
 
   function svg(tag, attrs = {}, ...children) {
@@ -360,6 +362,42 @@
     const label = `Graph path for ${d.id}: buyer, transaction, dispute, checkout device, shipment` +
       (linked.length ? `, and ${linked.length} other dispute${linked.length === 1 ? "" : "s"} sharing this device or IP` : "") + ".";
     const chart = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": label }, ...parts);
+    const flat = el("div", { class: "graph-wrap" }, chart);
+
+    // 3D view of the same nodes (graph3d.js). The flat SVG stays one click away, and is the only
+    // view when WebGL is missing, the library didn't load, or reduced motion is requested.
+    const why3dOff = typeof DD3D === "undefined" ? "Showing the flat diagram because the 3D view didn't load." : DD3D.unavailableReason();
+    let view = flat, legend3d = null, toggle = null, note = null;
+    if (why3dOff) {
+      note = el("p", { class: "hint", text: why3dOff });
+    } else {
+      const labels = {
+        customer: { title: "Buyer", sub: cust ? cust.payer_id : "Not on file" },
+        transaction: { title: "Transaction", sub: tx ? tx.id : "Not on file" },
+        dispute: { title: "Dispute", sub: DD.reasonLabel(d.reason) },
+        telemetry: { title: "Checkout device", sub: tel ? tel.device_hash : "No record on file" },
+        shipment: { title: "Shipment", sub: ship ? `${ship.carrier} ${ship.status.replaceAll("_", " ").toLowerCase()}` : "No record on file" },
+      };
+      linked.forEach((o) => { labels[`linked:${o.id}`] = { title: "Linked dispute", sub: o.id }; });
+      const stage = el("div", { class: "graph3d", "aria-label": label });
+      flat.hidden = true;
+      view = el("div", {}, stage, flat);
+      pendingGraph = { stage, ctx, used, labels, label };
+      toggle = el("button", { class: "secondary small", type: "button", "aria-pressed": "false", text: "Show flat diagram" });
+      toggle.addEventListener("click", () => {
+        const showFlat = flat.hidden;
+        flat.hidden = !showFlat;
+        stage.hidden = showFlat;
+        toggle.setAttribute("aria-pressed", String(showFlat));
+        toggle.textContent = showFlat ? "Show 3D view" : "Show flat diagram";
+      });
+      legend3d = el("div", { class: "graph-legend" },
+        el("span", {}, el("span", { class: "shape sphere", "aria-hidden": "true" }), "PayPal record"),
+        el("span", {}, el("span", { class: "shape crystal", "aria-hidden": "true" }), "Seeded test data"),
+        el("span", {}, el("span", { class: "shape glow", "aria-hidden": "true" }), "Cited in the recommendation"),
+        el("span", { text: "Drag, or focus it and use the arrow keys, to rotate." }),
+        linked.length > 6 ? el("span", { text: `${linked.length - 6} more linked disputes are in the flat diagram and the fact list.` }) : null);
+    }
 
     const facts = el("ul", { class: "fact-list" }, ...(rec.facts || []).map((f) => {
       const cited = rec.reasoning.some((p) => p.cites.includes(f.id));
@@ -369,8 +407,10 @@
 
     return [
       el("section", { class: "panel" },
-        el("h2", { text: "Evidence path" }),
-        el("div", { class: "graph-wrap" }, chart),
+        el("div", { class: "panel-head" }, el("h2", { text: "Evidence path" }), toggle),
+        note,
+        view,
+        legend3d,
         el("div", { class: "graph-legend" },
           el("span", {}, el("span", { class: "swatch", "aria-hidden": "true" }), "Used in the recommendation"),
           el("span", {}, el("span", { class: "swatch plain", "aria-hidden": "true" }), "On file, not cited"),
@@ -384,12 +424,34 @@
 
   // ---- render loop -------------------------------------------------------------------
 
+  function disposeGraph() {
+    if (graph3d) { graph3d.dispose(); graph3d = null; }
+  }
+
+  function mountPendingGraph() {
+    const p = pendingGraph;
+    pendingGraph = null;
+    if (!p || !p.stage.isConnected) return;
+    try {
+      graph3d = DD3D.mount(p.stage, p.ctx, p.used, p.labels);
+      const canvas = p.stage.querySelector("canvas");
+      if (canvas) canvas.setAttribute("aria-label", `${p.label} Cited nodes glow. Drag or use the arrow keys to rotate.`);
+      window.__ddGraph3d = graph3d;  // lets a developer read frame stats from the console
+    } catch (err) {
+      // Any 3D failure falls back to the flat diagram, never a broken panel.
+      p.stage.replaceChildren(el("p", { class: "hint", text: "The 3D view couldn't start here, so the flat diagram is shown below." }));
+      const flat = p.stage.nextElementSibling;
+      if (flat) flat.hidden = false;
+    }
+  }
+
   async function load() {
     let body;
     try {
       const resp = await fetch(`/api/decisions/${encodeURIComponent(disputeId)}`, { cache: "no-store" });
       if (resp.status === 404) {
         DD.live(true);  // the server answered; the dispute just is not there
+        disposeGraph();
         root.replaceChildren(stateView("Dispute not found",
           `There is no dispute ${disputeId} in the local store. Disputes appear here after the poller first sees them in the PayPal sandbox.`));
         return;
@@ -400,6 +462,7 @@
       DD.live(true);
     } catch (err) {
       DD.live(false);
+      disposeGraph();
       root.replaceChildren(stateView("Can't load this case", err instanceof TypeError
         ? "Can't reach the DisputeDesk server. Is uvicorn still running? Retrying every 5 seconds." : err.message));
       return;
@@ -413,10 +476,13 @@
     const right = el("div", {}, ...((decision && decision.status === "ok" && graphPanel(decision)) || [
       el("section", { class: "panel" }, el("h2", { text: "Evidence path" }),
         el("p", { class: "hint", text: "The graph path appears once the agent has a recommendation for this dispute." }))]));
+    disposeGraph();
     root.replaceChildren(header(dispute), el("div", { class: "case-grid" }, left, right));
+    mountPendingGraph();
   }
 
   window.addEventListener("beforeunload", (e) => { if (editorDirty) e.preventDefault(); });
+  window.addEventListener("pagehide", disposeGraph);  // free the GPU context when leaving the page
 
   if (!disputeId) {
     root.replaceChildren(stateView("No dispute selected", "Open a dispute from the queue to see its case."));

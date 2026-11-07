@@ -392,3 +392,22 @@ dialog.confirm h2 { font-size: 20px; margin: 0 0 14px; }
 .confirm-facts dd { margin: 0; font-weight: 600; }
 dialog.confirm .label { margin: 0; font-size: 14px; color: var(--muted); }
 pre.confirm-text { font-family: var(--font); font-size: 14px; }
+
+/* ---- 3D evidence graph ------------------------------------------------------------ */
+
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.panel-head h2 { margin: 0; }
+button.secondary.small { font-size: 13px; padding: 6px 10px; }
+.graph3d {
+  position: relative; border-radius: var(--r-sm); overflow: hidden;
+  background: radial-gradient(ellipse at 50% 35%, #1c2533 0%, var(--ink) 70%);
+  box-shadow: inset 0 0 0 1px var(--rule), inset 0 -40px 60px -40px rgba(0, 0, 0, 0.6);
+}
+.graph3d[hidden], .graph-wrap[hidden] { display: none; }
+.graph3d-canvas { display: block; cursor: grab; touch-action: none; }
+.graph3d-canvas:active { cursor: grabbing; }
+.graph3d-canvas:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.shape { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: middle; }
+.shape.sphere { border-radius: 50%; background: #8ea3bf; }
+.shape.crystal { transform: rotate(45deg) scale(0.8); border: 1.5px solid #b9a57a; }
+.shape.glow { border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px 2px rgba(226, 184, 92, 0.6); }
