@@ -3,7 +3,7 @@
 
 (() => {
   const { el } = DD;
-  DD.renderNav("queue");
+  DD.renderNav("queue", "Case");
 
   const POLL_MS = 5000;
   const SVG = "http://www.w3.org/2000/svg";
@@ -389,6 +389,7 @@
     try {
       const resp = await fetch(`/api/decisions/${encodeURIComponent(disputeId)}`, { cache: "no-store" });
       if (resp.status === 404) {
+        DD.live(true);  // the server answered; the dispute just is not there
         root.replaceChildren(stateView("Dispute not found",
           `There is no dispute ${disputeId} in the local store. Disputes appear here after the poller first sees them in the PayPal sandbox.`));
         return;
@@ -396,7 +397,9 @@
       if (resp.status === 403) throw new Error("This page only works on the machine running DisputeDesk (open it at http://127.0.0.1:8000).");
       if (!resp.ok) throw new Error(`The server answered HTTP ${resp.status}. Retrying every 5 seconds.`);
       body = await resp.json();
+      DD.live(true);
     } catch (err) {
+      DD.live(false);
       root.replaceChildren(stateView("Can't load this case", err instanceof TypeError
         ? "Can't reach the DisputeDesk server. Is uvicorn still running? Retrying every 5 seconds." : err.message));
       return;

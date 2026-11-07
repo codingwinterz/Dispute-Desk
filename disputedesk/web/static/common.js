@@ -17,14 +17,50 @@ const DD = (() => {
     return node;
   }
 
-  function renderNav(current) {
+  // ---- app shell: sidebar + top bar --------------------------------------------------
+  // Pages whose data exists are links; the rest are listed as coming soon, never as dead links.
+  const PAGES = { queue: "Dispute queue", policies: "Dispute policies", case: "Case" };
+  const COMING_SOON = ["Overview", "Activity", "Insights", "Graph", "System"];
+
+  function renderNav(current, title) {
     const links = [["queue", "/", "Queue"], ["policies", "/policies", "Policies"]];
-    const nav = el("nav", { class: "site-nav", "aria-label": "Main" },
+    const sidebar = el("aside", { class: "sidebar" },
       el("a", { class: "brand", href: "/" }, el("span", { class: "tab", "aria-hidden": "true" }), "DisputeDesk"),
-      el("div", { class: "links" }, ...links.map(([key, href, label]) =>
+      el("nav", { class: "side-links", "aria-label": "Main" }, ...links.map(([key, href, label]) =>
         el("a", { href, "aria-current": key === current ? "page" : null, text: label }))),
-      el("span", { class: "env", text: "PayPal sandbox" }));
-    document.body.prepend(nav);
+      el("div", { class: "side-soon" },
+        el("p", { class: "soon-title", id: "soon-title", text: "Coming soon" }),
+        el("ul", { "aria-labelledby": "soon-title" }, ...COMING_SOON.map((name) => el("li", { text: name })))));
+    const live = el("span", { class: "live", id: "live", role: "status", "aria-live": "polite" },
+      el("span", { class: "dot", "aria-hidden": "true" }),
+      el("span", { class: "live-label", text: "Connecting" }),
+      el("span", { class: "live-age num" }));
+    const topbar = el("header", { class: "topbar" },
+      el("span", { class: "topbar-title", text: title || PAGES[current] || "DisputeDesk" }),
+      el("div", { class: "topbar-status" }, live,
+        el("span", { class: "env", title: "Every call goes to api-m.sandbox.paypal.com; there are no live credentials.", text: "PayPal sandbox" })));
+    document.body.classList.add("shell");
+    document.body.prepend(sidebar, topbar);
+  }
+
+  // Live indicator: pages report each request to the local server. "Live" (pulsing) only while the
+  // last request succeeded; "Offline" (red, still) after a failure. Shows how long ago it last answered.
+  let lastOk = 0;
+  function live(ok) {
+    const node = document.getElementById("live");
+    if (!node) return;
+    if (ok) lastOk = Date.now();
+    node.classList.toggle("is-live", ok);
+    node.classList.toggle("is-offline", !ok);
+    node.querySelector(".live-label").textContent = ok ? "Live" : "Offline";
+    updateAge();
+  }
+  function updateAge() {
+    const age = document.querySelector("#live .live-age");
+    if (!age) return;
+    if (!lastOk) { age.textContent = ""; return; }
+    const s = Math.max(0, Math.round((Date.now() - lastOk) / 1000));
+    age.textContent = s < 2 ? "updated just now" : s < 120 ? `updated ${s}s ago` : `updated ${Math.round(s / 60)} min ago`;
   }
 
   // PayPal enums -> plain words. Unknown values fall back to a readable form, never dropped.
@@ -85,6 +121,7 @@ const DD = (() => {
 
   // Any element with data-due shows a live countdown; one ticker updates them all.
   function tick() {
+    updateAge();
     const now = Date.now();
     for (const node of document.querySelectorAll("[data-due]")) {
       const c = countdown(node.dataset.due, now);
@@ -123,6 +160,6 @@ const DD = (() => {
       el("span", { text: String(score) }), bar);
   }
 
-  return { el, renderNav, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
+  return { el, renderNav, live, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
            dueDate, sourceTag, decisionChip, riskNode, tick };
 })();

@@ -122,6 +122,7 @@
       const body = await resp.json();
       rows = (body.disputes || []).map(flat);
       loaded = true;
+      DD.live(true);
       banner.hidden = true;
       // With getRowId, AG Grid diffs the rows and flashes only the cells whose values changed.
       grid.setGridOption("rowData", rows);
@@ -130,6 +131,7 @@
       updateSummary();
       updateCount();
     } catch (err) {
+      DD.live(false);
       banner.textContent = err instanceof TypeError
         ? "Can't reach the DisputeDesk server. Is uvicorn still running? Retrying every 5 seconds."
         : err.message;

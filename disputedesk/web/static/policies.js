@@ -154,9 +154,11 @@
       if (resp.status === 403) throw new Error("This page only works on the machine running DisputeDesk (open it at http://127.0.0.1:8000).");
       if (!resp.ok) throw new Error(`The server answered HTTP ${resp.status}. Reload to try again.`);
       const body = await resp.json();
+      DD.live(true);
       saved = body.settings;
       render(body);
     } catch (err) {
+      DD.live(false);
       document.getElementById("loading").textContent = err instanceof TypeError
         ? "Can't reach the DisputeDesk server. Is uvicorn still running? Reload to try again." : err.message;
     }
