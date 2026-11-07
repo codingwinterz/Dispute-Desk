@@ -104,7 +104,7 @@ For each dispute with full details, the agent decides **DEFEND** or **ACCEPT**:
 2. One Cypher query returns the buyer, transaction, shipment, telemetry, and other disputes whose
    transaction shares the checkout device hash or IP.
 3. That result becomes numbered facts (`F1`…), each tagged `paypal` or `seeded`. The LLM (LiteLLM,
-   model `LLM_MODEL`, default `gemini/gemini-2.5-flash`) gets only those facts and the policy rules
+   model `LLM_MODEL`, default `gemini/gemini-3.5-flash-lite`) gets only those facts and the policy rules
    (`P1`…P4), and returns JSON: decision, risk_score (0–100, chance of losing if defended), 3–5
    reasoning points and a draft evidence summary.
 4. The reply is validated. Every reasoning point must cite supplied IDs; an unknown ID or bad JSON

@@ -18,7 +18,7 @@ DISPUTE_DB = DATA_DIR / "disputedesk.db"
 DEFAULT_POLL_SECONDS = 10.0
 
 # LLM used by the decision step, via LiteLLM. LiteLLM reads GEMINI_API_KEY from the environment.
-DEFAULT_LLM_MODEL = "gemini/gemini-2.5-flash"
+DEFAULT_LLM_MODEL = "gemini/gemini-3.5-flash-lite"
 # Local FalkorDB (Docker). Graph that holds the merchant context.
 DEFAULT_FALKORDB_HOST = "localhost"
 DEFAULT_FALKORDB_PORT = 6379
