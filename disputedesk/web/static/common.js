@@ -18,7 +18,7 @@ const DD = (() => {
   }
 
   function renderNav(current) {
-    const links = [["queue", "/", "Queue"]];
+    const links = [["queue", "/", "Queue"], ["policies", "/policies", "Policies"]];
     const nav = el("nav", { class: "site-nav", "aria-label": "Main" },
       el("a", { class: "brand", href: "/" }, el("span", { class: "tab", "aria-hidden": "true" }), "DisputeDesk"),
       el("div", { class: "links" }, ...links.map(([key, href, label]) =>

@@ -10,6 +10,8 @@
   const root = document.getElementById("case");
   const disputeId = decodeURIComponent(location.pathname.replace(/^\/case\//, "").replace(/\/$/, ""));
   let lastKey = "";
+  let editorDirty = false;   // unsaved draft edits: the 5-second refresh must not replace them
+  const MAX_DRAFT = 4000;    // matches the server's cap (disputedesk/drafts.py)
 
   function svg(tag, attrs = {}, ...children) {
     const node = document.createElementNS(SVG, tag);
@@ -48,7 +50,7 @@
 
   // ---- decision panel --------------------------------------------------------------
 
-  function decisionPanels(d, rec) {
+  function decisionPanels(d, rec, draft) {
     if (!rec) {
       return [el("section", { class: "panel" },
         el("h2", { text: "Recommendation" }),
@@ -64,7 +66,13 @@
     }
     const reasons = el("ol", { class: "reasons" }, ...rec.reasoning.map((p) =>
       el("li", {}, p.point, ...p.cites.map((c) => el("a", { class: "cite", href: `#fact-${c}`, text: c, title: citeTitle(rec, c) })))));
-    const approve = el("button", { class: "primary", type: "button", disabled: true, "aria-describedby": "approve-hint", text: "Approve and send to PayPal" });
+    const citedRules = [...new Set(rec.reasoning.flatMap((p) => p.cites).filter((c) => c.startsWith("P")))];
+    const ruleText = Object.fromEntries((rec.rules || []).map((r) => [r.id, r.text]));
+    const rulesBlock = citedRules.length ? el("div", { class: "rules-used" },
+      el("h3", { text: "Policy rules it relied on" }),
+      el("ul", {}, ...citedRules.map((id) => el("li", { id: `rule-${id}` },
+        el("strong", { text: `${id} ` }),
+        ruleText[id] || "Rule text wasn't recorded for this older recommendation. Run it again to record the rules it uses.")))) : null;
     return [
       el("section", { class: "panel" },
         el("h2", { text: "Recommendation" }),
@@ -73,19 +81,91 @@
           el("span", { class: "score", title: "Likelihood, 0 to 100, that the dispute is invalid, based only on the evidence on file" },
             el("strong", { text: String(rec.risk_score) }), "risk score"),
           el("span", { class: "meta", text: `Analyzed ${new Date(rec.created_at).toLocaleString()} by ${rec.model}` }))),
-      el("section", { class: "panel" }, el("h2", { text: "Why" }), reasons),
-      el("section", { class: "panel" },
-        el("h2", { text: "Draft response to PayPal" }),
-        el("p", { class: "draft", text: rec.evidence_summary }),
-        el("div", { class: "approve-row" },
-          approve,
-          el("p", { class: "hint", id: "approve-hint", text: "Sending responses to PayPal isn't switched on yet. Review the draft here; nothing is submitted from this page." }))),
+      el("section", { class: "panel" }, el("h2", { text: "Why" }), reasons, rulesBlock),
+      draftPanel(d, rec, draft),
     ];
+  }
+
+  // ---- draft editor ----------------------------------------------------------------------
+
+  function draftPanel(d, rec, draft) {
+    const original = draft ? draft.text : rec.evidence_summary;
+    const text = el("textarea", { id: "draft-text", class: "draft-editor", rows: "12", maxlength: String(MAX_DRAFT),
+                                  "aria-describedby": "draft-origin draft-count", spellcheck: "true" });
+    text.value = original;
+    const count = el("span", { class: "hint num", id: "draft-count" });
+    const status = el("p", { class: "hint", id: "draft-status", "aria-live": "polite" });
+    const save = el("button", { class: "primary", type: "button", text: "Save draft" });
+    const restore = el("button", { class: "secondary", type: "button", text: "Use the agent's draft" });
+    const fix = el("button", { class: "secondary", type: "button", hidden: true, text: "Add the note back" });
+    let sandboxNote = "";
+
+    const origin = draft && draft.edited
+      ? `Your edited version, saved ${new Date(draft.updated_at).toLocaleString()}. This is the text that will be sent to PayPal when you approve.`
+      : "The agent's draft. Edit it and save; the saved text is what will be sent to PayPal when you approve.";
+    const newer = draft && draft.edited && Date.parse(rec.created_at) > Date.parse(draft.updated_at)
+      ? el("p", { class: "notice", text: `The agent wrote a newer draft on ${new Date(rec.created_at).toLocaleString()}. Your saved version is unchanged; use the button below to switch to the agent's.` })
+      : null;
+
+    const updateCount = () => {
+      count.textContent = `${text.value.length} / ${MAX_DRAFT} characters`;
+      count.classList.toggle("error-text", text.value.length > MAX_DRAFT);
+    };
+    const markDirty = () => {
+      editorDirty = text.value !== original;
+      status.textContent = editorDirty ? "Unsaved changes." : "";
+      status.classList.remove("error-text");
+      fix.hidden = true;
+      updateCount();
+    };
+    text.addEventListener("input", markDirty);
+    restore.hidden = !(draft && draft.edited);
+    restore.addEventListener("click", () => { text.value = rec.evidence_summary; markDirty(); text.focus(); });
+    fix.addEventListener("click", () => { text.value = `${text.value.trimEnd()} ${sandboxNote}`; markDirty(); text.focus(); });
+
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      try {
+        const resp = await fetch(`/api/drafts/${encodeURIComponent(d.dispute_id)}`, {
+          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.value }) });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          status.textContent = `Not saved. ${body.message || body.error || `The server answered HTTP ${resp.status}.`}`;
+          status.classList.add("error-text");
+          if (body.error === "missing_sandbox_note" && body.note) { sandboxNote = body.note; fix.hidden = false; }
+          return;
+        }
+        editorDirty = false;
+        lastKey = "";  // re-render from the server so the page shows the saved version
+        await load();
+        const after = document.getElementById("draft-status");
+        if (after) after.textContent = `Saved ${new Date(body.draft.updated_at).toLocaleTimeString()}.`;
+      } catch {
+        status.textContent = "Not saved. Can't reach the DisputeDesk server; your text is still here.";
+        status.classList.add("error-text");
+      } finally {
+        save.disabled = false;
+      }
+    });
+    updateCount();
+
+    return el("section", { class: "panel" },
+      el("h2", {}, el("label", { for: "draft-text", text: "Draft response to PayPal" })),
+      el("p", { class: "hint", id: "draft-origin", text: origin }),
+      newer,
+      text,
+      el("div", { class: "editor-row" }, count),
+      el("div", { class: "approve-row" }, save, restore, fix, status),
+      el("div", { class: "approve-row" },
+        el("button", { class: "primary", type: "button", disabled: true, "aria-describedby": "approve-hint", text: "Approve and send to PayPal" }),
+        el("p", { class: "hint", id: "approve-hint", text: "Approving will send the saved draft. Sending responses to PayPal isn't switched on yet, so nothing is submitted from this page." })));
   }
 
   function citeTitle(rec, id) {
     const f = (rec.facts || []).find((x) => x.id === id);
     if (f) return f.text;
+    const r = (rec.rules || []).find((x) => x.id === id);
+    if (r) return r.text;
     return id.startsWith("P") ? `Merchant policy rule ${id}` : id;
   }
 
@@ -186,14 +266,17 @@
     }
     const key = JSON.stringify(body);
     if (key === lastKey) return; // nothing changed; keep scroll position and any open anchor
+    if (editorDirty) return;     // never replace unsaved draft edits; the refresh after saving shows changes
     lastKey = key;
-    const { dispute, decision } = body;
-    const left = el("div", {}, ...decisionPanels(dispute, decision));
+    const { dispute, decision, draft } = body;
+    const left = el("div", {}, ...decisionPanels(dispute, decision, draft));
     const right = el("div", {}, ...((decision && decision.status === "ok" && graphPanel(decision)) || [
       el("section", { class: "panel" }, el("h2", { text: "Evidence path" }),
         el("p", { class: "hint", text: "The graph path appears once the agent has a recommendation for this dispute." }))]));
     root.replaceChildren(header(dispute), el("div", { class: "case-grid" }, left, right));
   }
+
+  window.addEventListener("beforeunload", (e) => { if (editorDirty) e.preventDefault(); });
 
   if (!disputeId) {
     root.replaceChildren(stateView("No dispute selected", "Open a dispute from the queue to see its case."));

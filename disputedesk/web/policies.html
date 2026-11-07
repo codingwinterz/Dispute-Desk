@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DisputeDesk policies</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="narrow">
+    <h1>Dispute policies</h1>
+    <p class="lede">These rules shape every recommendation. The agent reads the text under each rule and has to
+      cite the rule it relies on, so you can see exactly why it chose to defend or accept.</p>
+    <p class="banner" id="error" role="alert" hidden></p>
+
+    <form id="policies" novalidate>
+      <p class="state" id="loading">Loading your policies.</p>
+    </form>
+  </main>
+
+  <script src="/static/common.js"></script>
+  <script src="/static/policies.js"></script>
+</body>
+</html>
