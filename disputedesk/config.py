@@ -17,6 +17,13 @@ DATA_DIR = PROJECT_ROOT / "data"
 DISPUTE_DB = DATA_DIR / "disputedesk.db"
 DEFAULT_POLL_SECONDS = 10.0
 
+# LLM used by the decision step, via LiteLLM. LiteLLM reads GEMINI_API_KEY from the environment.
+DEFAULT_LLM_MODEL = "gemini/gemini-3.5-flash-lite"
+# Local FalkorDB (Docker). Graph that holds the merchant context.
+DEFAULT_FALKORDB_HOST = "localhost"
+DEFAULT_FALKORDB_PORT = 6379
+GRAPH_NAME = "disputedesk"
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -55,4 +62,25 @@ def load_settings(env_file: Path | None = None) -> Settings:
         client_secret=os.environ["PAYPAL_CLIENT_SECRET"],
         webhook_id=os.environ["PAYPAL_WEBHOOK_ID"],
         poll_seconds=poll_seconds,
+    )
+
+
+@dataclass(frozen=True)
+class AgentSettings:
+    llm_model: str = DEFAULT_LLM_MODEL
+    falkordb_host: str = DEFAULT_FALKORDB_HOST
+    falkordb_port: int = DEFAULT_FALKORDB_PORT
+
+
+def load_agent_settings(env_file: Path | None = None) -> AgentSettings:
+    """LLM model and FalkorDB location. GEMINI_API_KEY is not read here: LiteLLM reads it itself."""
+    load_dotenv(env_file or PROJECT_ROOT / ".env")
+    try:
+        port = int(os.getenv("FALKORDB_PORT") or DEFAULT_FALKORDB_PORT)
+    except ValueError:
+        raise RuntimeError("FALKORDB_PORT must be an integer") from None
+    return AgentSettings(
+        llm_model=os.getenv("LLM_MODEL") or DEFAULT_LLM_MODEL,
+        falkordb_host=os.getenv("FALKORDB_HOST") or DEFAULT_FALKORDB_HOST,
+        falkordb_port=port,
     )

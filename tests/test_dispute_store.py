@@ -40,7 +40,7 @@ def test_update_full_keeps_source(store):
 
     assert not store.needs_full("PP-R-TEST-1")
     [row] = store.summaries()
-    assert row["source"] == "webhook"
+    assert row["source"] == "paypal" and row["detected_via"] == "webhook"
     assert row["status"] == "WAITING_FOR_SELLER_RESPONSE"
 
 
@@ -53,7 +53,7 @@ def test_summary_fields(store):
     assert row["stage"] == "CHARGEBACK"
     assert row["amount"] == {"currency_code": "USD", "value": "25.00"}
     assert row["seller_response_due_date"] == "2026-11-20T00:00:00.000Z"
-    assert row["source"] == "poll"
+    assert row["source"] == "paypal" and row["detected_via"] == "poll"
     assert row["detected_at"]
     assert row["actions"] == ["accept_claim", "provide_evidence"]  # "self" is a GET, not an action
 

@@ -9,7 +9,7 @@ from disputedesk.auth import TokenProvider
 from disputedesk.config import SANDBOX_BASE_URL
 from disputedesk.dispute_store import DisputeStore
 from disputedesk.disputes import DisputesClient
-from disputedesk.events import DisputeDetected, EventBus
+from disputedesk.events import DisputeDetected, DisputeUpdated, EventBus
 from disputedesk.poller import DisputePoller
 from disputedesk.webhooks import EventStore, PayPalSignatureVerifier, create_app
 from tests.conftest import TOKEN_URL, VERIFY_URL
@@ -182,7 +182,8 @@ def test_webhook_then_poll_processes_dispute_once(paypal, client, settings, http
     poller.poll_once()
     poller.poll_once()
 
-    assert detected == [DisputeDetected("PP-D-1", "webhook")]  # no second event from the poll
+    # No second dispute_detected from the poll; the backfill emits dispute_updated instead.
+    assert detected == [DisputeDetected("PP-D-1", "webhook"), DisputeUpdated("PP-D-1", "poll")]
     assert get_one.call_count == 1  # fetched once to backfill the full details
 
 
@@ -238,7 +239,7 @@ def test_webhook_arriving_while_poll_fetches_wins_once(paypal, client, settings,
 
     assert detected == [DisputeDetected("PP-D-1", "webhook")]  # exactly one event
     [row] = dispute_store.summaries()
-    assert row["source"] == "webhook"
+    assert row["source"] == "paypal" and row["detected_via"] == "webhook"
     assert row["stage"] == "CHARGEBACK"  # poll's full data kept
     assert not dispute_store.needs_full("PP-D-1")
 
@@ -266,7 +267,7 @@ def test_api_disputes_lists_stored_disputes(client, dispute_store):
     assert row["reason"] == "MERCHANDISE_OR_SERVICE_NOT_RECEIVED"
     assert row["amount"] == {"currency_code": "USD", "value": "10.00"}
     assert row["seller_response_due_date"] == "2026-11-20T00:00:00.000Z"
-    assert row["source"] == "poll"
+    assert row["source"] == "paypal" and row["detected_via"] == "poll"
     assert row["detected_at"]
     assert row["actions"] == ["accept_claim", "provide_evidence"]
 

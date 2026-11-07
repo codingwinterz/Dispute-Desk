@@ -35,7 +35,9 @@ def summarize(dispute_id: str, source: str, detected_at: str, data: dict[str, An
         "reason": data.get("reason"),
         "amount": data.get("dispute_amount"),
         "seller_response_due_date": data.get("seller_response_due_date"),
-        "source": source,
+        # Every dispute record comes from PayPal; detected_via says which path saw it first.
+        "source": "paypal",
+        "detected_via": source,
         "detected_at": detected_at,
         "actions": actions,
     }
@@ -91,6 +93,21 @@ class DisputeStore:
                 "UPDATE disputes SET data = ?, full_fetched = 1 WHERE dispute_id = ?",
                 (json.dumps(data), dispute_id),
             )
+
+    def get(self, dispute_id: str) -> dict[str, Any] | None:
+        """Stored dispute JSON (full GET response, or the webhook snapshot until backfilled)."""
+        row = self._row(dispute_id, "data")
+        return json.loads(row[0]) if row else None
+
+    def full_disputes(self) -> dict[str, dict[str, Any]]:
+        """dispute_id -> data for every dispute whose full GET response is stored."""
+        with self._lock:
+            rows = self._db.execute("SELECT dispute_id, data FROM disputes WHERE full_fetched = 1").fetchall()
+        return {i: json.loads(raw) for i, raw in rows}
+
+    def summary(self, dispute_id: str) -> dict[str, Any] | None:
+        row = self._row(dispute_id, "dispute_id, source, detected_at, data")
+        return summarize(row[0], row[1], row[2], json.loads(row[3])) if row else None
 
     def summaries(self) -> list[dict[str, Any]]:
         with self._lock:

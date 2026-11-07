@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DisputeDesk queue</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&display=swap">
+  <!-- AG Grid Community 32.3.3 (MIT license), free features only. -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-grid.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-theme-quartz.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main>
+    <h1>Disputes waiting on you</h1>
+    <p class="lede" id="summary">Loading disputes from the local store.</p>
+    <p class="banner" id="error" role="alert" hidden></p>
+
+    <div class="toolbar" role="search">
+      <label class="field">Search
+        <input id="search" type="search" placeholder="Dispute ID, reason or amount" autocomplete="off">
+      </label>
+      <label class="field">Reason
+        <select id="reason"><option value="">All reasons</option></select>
+      </label>
+      <label class="field">Status
+        <select id="status"><option value="">All statuses</option></select>
+      </label>
+      <span class="count" id="count" aria-live="polite"></span>
+    </div>
+
+    <div id="grid" class="ag-theme-quartz-dark" aria-label="Dispute queue"></div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/dist/ag-grid-community.min.js"></script>
+  <script src="/static/common.js"></script>
+  <script src="/static/queue.js"></script>
+</body>
+</html>

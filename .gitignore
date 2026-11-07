@@ -3,7 +3,7 @@
 !.env.example
 __pycache__/
 *.pyc
-.venv/
+.venv*/
 logs/
 .pytest_cache/
 *.sqlite3
