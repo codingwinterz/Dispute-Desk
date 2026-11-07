@@ -175,7 +175,11 @@ def decide(
     allowed = {f["id"] for f in facts} | {r["id"] for r in rules}
     messages: list[dict[str, str]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": json.dumps({"dispute_id": dispute_id, "facts": facts, "policy_rules": rules})},
+        {"role": "user", "content": json.dumps({
+            "dispute_id": dispute_id,
+            "facts": [{k: f[k] for k in ("id", "text", "source")} for f in facts],
+            "policy_rules": rules,
+        })},
     ]
     try:
         completion = completion or _litellm_completion()

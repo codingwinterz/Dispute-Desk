@@ -210,21 +210,23 @@ def _money(amount: Any, currency: Any) -> str:
 
 
 def context_to_facts(ctx: dict[str, Any]) -> list[dict[str, str]]:
-    """Numbered facts (F1..Fn) built only from the graph context. The LLM may cite only these."""
-    facts: list[tuple[str, str]] = []
+    """Numbered facts (F1..Fn) built only from the graph context. The LLM may cite only these.
+    `ref` names the graph node a fact describes (dispute, customer, transaction, shipment, telemetry,
+    linked:<id>) so the case page can highlight the cited path; it is not sent to the LLM."""
+    facts: list[tuple[str, str, str]] = []  # (text, source, graph node ref)
     d, c, t, s, tel = ctx["dispute"], ctx["customer"], ctx["transaction"], ctx["shipment"], ctx["telemetry"]
 
     facts.append((f"Dispute {d['id']}: reason {d['reason']}, amount {_money(d['amount'], d['currency'])}, "
-                  f"stage {d['stage']}, status {d['status']}, seller response due {d['due']}.", d["source"]))
+                  f"stage {d['stage']}, status {d['status']}, seller response due {d['due']}.", d["source"], "dispute"))
     if c:
-        facts.append((f"Buyer PayPal payer_id {c['payer_id']}.", c["source"]))
+        facts.append((f"Buyer PayPal payer_id {c['payer_id']}.", c["source"], "customer"))
     if t:
         facts.append((f"Transaction {t['id']} created {t['create_time']} for "
-                      f"{_money(t['amount'], t['currency'])}.", t["source"]))
+                      f"{_money(t['amount'], t['currency'])}.", t["source"], "transaction"))
         if t.get("seller_protection_eligible") is not None:
             facts.append((f"PayPal marks transaction {t['id']} seller_protection_eligible="
                           f"{str(t['seller_protection_eligible']).lower()} "
-                          f"({t.get('seller_protection_type')}).", t["source"]))
+                          f"({t.get('seller_protection_type')}).", t["source"], "transaction"))
     if s:
         detail = f"Shipment {s['id']} via {s['carrier']} (tracking {s['tracking_id']}) to {s['destination']}: status {s['status']}"
         if s.get("shipped_at"):
@@ -235,23 +237,24 @@ def context_to_facts(ctx: dict[str, Any]) -> list[dict[str, str]]:
             detail += f", last carrier scan: {s['last_scan']}"
         if s.get("signed_by_buyer") is not None:
             detail += f", signed by buyer: {'yes' if s['signed_by_buyer'] else 'no'}"
-        facts.append((detail + ".", s["source"]))
+        facts.append((detail + ".", s["source"], "shipment"))
     else:
-        facts.append(("No shipment record is on file for this transaction.", SEEDED))
+        facts.append(("No shipment record is on file for this transaction.", SEEDED, "shipment"))
     if tel:
         facts.append((f"Checkout telemetry {tel['id']}: IP {tel['ip']} (geolocated {tel['geo']}), "
-                      f"device hash {tel['device_hash']}.", tel["source"]))
+                      f"device hash {tel['device_hash']}.", tel["source"], "telemetry"))
     else:
-        facts.append(("No checkout telemetry is on file for this transaction.", SEEDED))
+        facts.append(("No checkout telemetry is on file for this transaction.", SEEDED, "telemetry"))
 
     linked = ctx["linked_disputes"]
     if linked:
         facts.append((f"{len(linked)} other dispute(s) come from a transaction sharing this checkout's "
-                      "device hash or IP.", SEEDED))
+                      "device hash or IP.", SEEDED, "telemetry"))
         for o in linked:
             facts.append((f"{LINKED_PREFIX}{o['id']} (transaction {o['transaction_id']}, reason {o['reason']}, "
-                          f"status {o['status']}) shares the {o['via'].replace('_', ' ')}.", o["source"]))
+                          f"status {o['status']}) shares the {o['via'].replace('_', ' ')}.", o["source"], f"linked:{o['id']}"))
     else:
-        facts.append(("No other dispute shares this checkout's device hash or IP.", SEEDED))
+        facts.append(("No other dispute shares this checkout's device hash or IP.", SEEDED, "telemetry"))
 
-    return [{"id": f"F{n}", "text": text, "source": src} for n, (text, src) in enumerate(facts, 1)]
+    return [{"id": f"F{n}", "text": text, "source": src, "ref": ref}
+            for n, (text, src, ref) in enumerate(facts, 1)]

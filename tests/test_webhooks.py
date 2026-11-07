@@ -239,7 +239,7 @@ def test_webhook_arriving_while_poll_fetches_wins_once(paypal, client, settings,
 
     assert detected == [DisputeDetected("PP-D-1", "webhook")]  # exactly one event
     [row] = dispute_store.summaries()
-    assert row["source"] == "webhook"
+    assert row["source"] == "paypal" and row["detected_via"] == "webhook"
     assert row["stage"] == "CHARGEBACK"  # poll's full data kept
     assert not dispute_store.needs_full("PP-D-1")
 
@@ -267,7 +267,7 @@ def test_api_disputes_lists_stored_disputes(client, dispute_store):
     assert row["reason"] == "MERCHANDISE_OR_SERVICE_NOT_RECEIVED"
     assert row["amount"] == {"currency_code": "USD", "value": "10.00"}
     assert row["seller_response_due_date"] == "2026-11-20T00:00:00.000Z"
-    assert row["source"] == "poll"
+    assert row["source"] == "paypal" and row["detected_via"] == "poll"
     assert row["detected_at"]
     assert row["actions"] == ["accept_claim", "provide_evidence"]
 

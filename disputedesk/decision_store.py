@@ -60,6 +60,14 @@ class DecisionStore:
             rec[key] = json.loads(rec[key]) if rec[key] else None
         return rec
 
+    def briefs(self) -> dict[str, dict[str, Any]]:
+        """dispute_id -> {status, decision, risk_score, created_at} for the queue."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT dispute_id, status, decision, risk_score, created_at FROM decisions"
+            ).fetchall()
+        return {r[0]: {"status": r[1], "decision": r[2], "risk_score": r[3], "created_at": r[4]} for r in rows}
+
     def has_ok(self, dispute_id: str) -> bool:
         with self._lock:
             row = self._db.execute(
