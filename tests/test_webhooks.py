@@ -9,7 +9,7 @@ from disputedesk.auth import TokenProvider
 from disputedesk.config import SANDBOX_BASE_URL
 from disputedesk.dispute_store import DisputeStore
 from disputedesk.disputes import DisputesClient
-from disputedesk.events import DisputeDetected, EventBus
+from disputedesk.events import DisputeDetected, DisputeUpdated, EventBus
 from disputedesk.poller import DisputePoller
 from disputedesk.webhooks import EventStore, PayPalSignatureVerifier, create_app
 from tests.conftest import TOKEN_URL, VERIFY_URL
@@ -182,7 +182,8 @@ def test_webhook_then_poll_processes_dispute_once(paypal, client, settings, http
     poller.poll_once()
     poller.poll_once()
 
-    assert detected == [DisputeDetected("PP-D-1", "webhook")]  # no second event from the poll
+    # No second dispute_detected from the poll; the backfill emits dispute_updated instead.
+    assert detected == [DisputeDetected("PP-D-1", "webhook"), DisputeUpdated("PP-D-1", "poll")]
     assert get_one.call_count == 1  # fetched once to backfill the full details
 
 

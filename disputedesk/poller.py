@@ -3,6 +3,10 @@
 For each dispute ID not in the DisputeStore it fetches GET /v1/customer/disputes/{id}, saves the
 JSON to logs/disputes/<id>.json and emits dispute_detected with source="poll".
 
+For disputes already stored, it compares the list item's status, stage, update_time and action
+links with the stored data. Only when one differs does it GET the dispute again, store the new
+data and emit dispute_updated. Unchanged disputes cost no extra request.
+
 Only DisputesClient.list_disputes and get_dispute are called; never a mutating endpoint.
 Both build their URL from Settings.base_url, which only accepts the sandbox base URL.
 """
@@ -16,11 +20,31 @@ import httpx
 
 from disputedesk.dispute_store import DisputeStore, safe_filename
 from disputedesk.disputes import DisputesClient
-from disputedesk.events import DisputeDetected, EventBus
+from disputedesk.events import DisputeDetected, DisputeUpdated, EventBus
 
 log = logging.getLogger("disputedesk.poller")
 
 MAX_BACKOFF_SECONDS = 300.0
+
+
+# Fields compared between a list item and the stored dispute. Observed in real sandbox responses to
+# GET /v1/customer/disputes, whose items carry status, dispute_life_cycle_stage, update_time and links:
+# https://developer.paypal.com/docs/api/customer-disputes/v1/#disputes_list
+_STATE_FIELDS = ("status", "dispute_life_cycle_stage", "update_time")
+
+
+def _link_set(d: dict) -> set[tuple[str, str]]:
+    return {(str(link.get("rel")), str(link.get("method", "")).upper())
+            for link in d.get("links") or [] if isinstance(link, dict)}
+
+
+def changed_fields(item: dict, stored: dict) -> list[str]:
+    """Fields where the list item differs from the stored dispute. A field missing from the list
+    item is not compared, so a sparse list response never forces a refresh."""
+    changed = [f for f in _STATE_FIELDS if item.get(f) is not None and item.get(f) != stored.get(f)]
+    if "links" in item and _link_set(item) != _link_set(stored):
+        changed.append("links")
+    return changed
 
 
 def _retryable(status: int) -> bool:
@@ -73,17 +97,29 @@ class DisputePoller:
         # 401 is handled inside DisputesClient._request: token invalidated and the call retried once.
         # The client follows "next" pages itself.
         items = self._client.list_disputes()
-        ids = list(dict.fromkeys(
-            item["dispute_id"] for item in items if isinstance(item, dict) and item.get("dispute_id")
-        ))
+        by_id: dict[str, dict] = {}
+        for item in items:
+            if isinstance(item, dict) and item.get("dispute_id"):
+                by_id.setdefault(item["dispute_id"], item)
+        ids = list(by_id)
         new_ids = [i for i in ids if not self._store.seen(i)]
         # Webhook-first disputes that still only hold the webhook snapshot.
         backfill = [i for i in ids if i not in new_ids and self._store.needs_full(i)]
-        log.info("poll ok count=%d new=%d", len(items), len(new_ids))
+        refresh: list[tuple[str, list[str]]] = []
+        for i in ids:
+            if i in new_ids or i in backfill:
+                continue
+            stored = self._store.get(i)
+            fields = changed_fields(by_id[i], stored) if stored is not None else []
+            if fields:
+                refresh.append((i, fields))
+        log.info("poll ok count=%d new=%d changed=%d", len(items), len(new_ids), len(refresh))
         for dispute_id in new_ids:
             self._process_new(dispute_id)
         for dispute_id in backfill:
             self._backfill(dispute_id)
+        for dispute_id, fields in refresh:
+            self._refresh(dispute_id, fields)
 
     def _fetch(self, dispute_id: str) -> dict | None:
         """Full dispute, or None for a non-retryable error. 429/5xx propagate so the loop backs off
@@ -116,6 +152,16 @@ class DisputePoller:
             self._save(dispute_id, dispute)
             self._store.update_full(dispute_id, dispute)
             log.info("dispute=%s full details stored (first seen via webhook)", dispute_id)
+            self._bus.emit(DisputeUpdated(dispute_id, "poll"))
+
+    def _refresh(self, dispute_id: str, fields: list[str]) -> None:
+        dispute = self._fetch(dispute_id)
+        if dispute is not None:
+            self._save(dispute_id, dispute)
+            self._store.update_full(dispute_id, dispute)
+            log.info("dispute=%s refreshed (changed: %s) stage=%s status=%s", dispute_id, ", ".join(fields),
+                     dispute.get("dispute_life_cycle_stage"), dispute.get("status"))
+            self._bus.emit(DisputeUpdated(dispute_id, "poll"))
 
     def _save(self, dispute_id: str, dispute: dict) -> None:
         self._disputes_dir.mkdir(parents=True, exist_ok=True)

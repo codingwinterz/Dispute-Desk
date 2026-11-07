@@ -8,7 +8,7 @@ from disputedesk.auth import TokenProvider
 from disputedesk.config import SANDBOX_BASE_URL
 from disputedesk.dispute_store import DisputeStore
 from disputedesk.disputes import DisputesClient
-from disputedesk.events import DisputeDetected, EventBus
+from disputedesk.events import DisputeDetected, DisputeUpdated, EventBus
 from disputedesk.poller import DisputePoller
 from tests.conftest import TOKEN_URL
 
@@ -77,7 +77,7 @@ def test_duplicate_is_ignored(paypal, poller, store, events):
     paypal.get(DISPUTES_URL).mock(return_value=page("PP-D-1", "PP-D-2"))
     get_1 = paypal.get(f"{DISPUTES_URL}/PP-D-1").mock(return_value=detail("PP-D-1"))
     get_2 = paypal.get(f"{DISPUTES_URL}/PP-D-2").mock(return_value=detail("PP-D-2"))
-    store.claim("PP-D-2", "webhook", {"dispute_id": "PP-D-2"}, full=True)  # already fully processed
+    store.claim("PP-D-2", "webhook", {"dispute_id": "PP-D-2", "status": "OPEN"}, full=True)  # already fully processed, unchanged
 
     poller.poll_once()
     poller.poll_once()  # second poll returns the same IDs
@@ -226,7 +226,61 @@ def test_webhook_first_dispute_is_backfilled_without_new_event(paypal, poller, s
     poller.poll_once()
 
     assert get_one.call_count == 1  # fetched once to backfill, then not again
-    assert events == []
+    # Backfill emits dispute_updated (so deferred analysis runs), never a second dispute_detected.
+    assert events == [DisputeUpdated("PP-D-1", "poll")]
     assert not store.needs_full("PP-D-1")
     assert store.source_of("PP-D-1") == "webhook"
     assert (tmp_path / "disputes" / "PP-D-1.json").exists()
+
+
+def listed(dispute_id: str, **fields) -> httpx.Response:
+    return httpx.Response(200, json={"items": [{"dispute_id": dispute_id, **fields}], "links": []})
+
+
+STORED = {"dispute_id": "PP-D-1", "status": "WAITING_FOR_SELLER_RESPONSE", "dispute_life_cycle_stage": "CHARGEBACK",
+          "update_time": "2026-11-01T00:00:00Z",
+          "links": [{"rel": "self", "method": "GET"}, {"rel": "provide_evidence", "method": "POST"}]}
+
+
+def test_unchanged_stored_dispute_costs_no_extra_request(paypal, poller, store, events):
+    paypal.get(DISPUTES_URL).mock(return_value=listed("PP-D-1", **{k: v for k, v in STORED.items() if k != "dispute_id"}))
+    get_one = paypal.get(f"{DISPUTES_URL}/PP-D-1").mock(return_value=detail("PP-D-1"))
+    store.claim("PP-D-1", "poll", STORED, full=True)
+    poller.poll_once()
+    assert get_one.call_count == 0 and events == []
+
+
+def test_status_change_refreshes_stored_dispute(paypal, poller, store, events, tmp_path, caplog):
+    caplog.set_level("INFO")
+    paypal.get(DISPUTES_URL).mock(return_value=listed("PP-D-1", status="UNDER_REVIEW", update_time="2026-11-08T00:00:00Z"))
+    fresh = dict(STORED, status="UNDER_REVIEW", update_time="2026-11-08T00:00:00Z", links=[{"rel": "self", "method": "GET"}])
+    get_one = paypal.get(f"{DISPUTES_URL}/PP-D-1").mock(return_value=httpx.Response(200, json=fresh))
+    store.claim("PP-D-1", "poll", STORED, full=True)
+
+    poller.poll_once()
+
+    assert get_one.call_count == 1
+    assert store.get("PP-D-1")["status"] == "UNDER_REVIEW"
+    assert store.summaries()[0]["actions"] == []  # provide_evidence link gone after refresh
+    assert events == [DisputeUpdated("PP-D-1", "poll")]
+    assert "changed: status, update_time" in caplog.text
+    assert only_gets(paypal)
+
+
+def test_links_change_alone_triggers_refresh(paypal, poller, store, events):
+    paypal.get(DISPUTES_URL).mock(return_value=listed("PP-D-1", status=STORED["status"],
+                                                      links=[{"rel": "self", "method": "GET"}]))
+    get_one = paypal.get(f"{DISPUTES_URL}/PP-D-1").mock(return_value=httpx.Response(200, json=STORED))
+    store.claim("PP-D-1", "poll", STORED, full=True)
+    poller.poll_once()
+    assert get_one.call_count == 1 and events == [DisputeUpdated("PP-D-1", "poll")]
+
+
+def test_refresh_does_not_emit_detected_again(paypal, poller, store, events):
+    paypal.get(DISPUTES_URL).mock(return_value=listed("PP-D-1", status="RESOLVED"))
+    paypal.get(f"{DISPUTES_URL}/PP-D-1").mock(return_value=httpx.Response(200, json=dict(STORED, status="RESOLVED")))
+    store.claim("PP-D-1", "poll", STORED, full=True)
+    poller.poll_once()
+    poller.poll_once()  # stored now matches the list: no second refresh
+    assert events == [DisputeUpdated("PP-D-1", "poll")]
+    assert not any(isinstance(e, DisputeDetected) for e in events)
