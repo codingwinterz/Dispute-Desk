@@ -92,6 +92,17 @@ class DisputeStore:
                 (json.dumps(data), dispute_id),
             )
 
+    def get(self, dispute_id: str) -> dict[str, Any] | None:
+        """Stored dispute JSON (full GET response, or the webhook snapshot until backfilled)."""
+        row = self._row(dispute_id, "data")
+        return json.loads(row[0]) if row else None
+
+    def full_disputes(self) -> dict[str, dict[str, Any]]:
+        """dispute_id -> data for every dispute whose full GET response is stored."""
+        with self._lock:
+            rows = self._db.execute("SELECT dispute_id, data FROM disputes WHERE full_fetched = 1").fetchall()
+        return {i: json.loads(raw) for i, raw in rows}
+
     def summaries(self) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._db.execute(
