@@ -486,3 +486,39 @@ button.secondary.small { font-size: 13px; padding: 6px 10px; }
 @media (prefers-reduced-motion: reduce) {
   .folder-row:hover, .folder-row:focus-visible { transform: none; }
 }
+
+/* ---- activity timeline -------------------------------------------------------------- */
+
+.day { margin-top: 28px; }
+.day h2 { font-size: 15px; color: var(--muted); margin-bottom: 10px; }
+.timeline { list-style: none; margin: 0; padding: 0 0 0 4px; position: relative; display: grid; gap: 2px; }
+.timeline::before { content: ""; position: absolute; left: 9px; top: 8px; bottom: 8px; width: 2px; background: var(--rule); }
+.event { position: relative; display: grid; grid-template-columns: 22px 78px minmax(0, 1fr); align-items: start; gap: 8px; padding: 8px 0; }
+.event-dot { position: relative; z-index: 1; width: 12px; height: 12px; margin: 4px 0 0 0; border-radius: 50%; background: var(--ink); border: 2px solid var(--muted); }
+.event.analyzed .event-dot, .event.approved .event-dot { border-color: var(--accent); }
+.event.sent .event-dot { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 10px rgba(226, 184, 92, 0.6); }
+.event.failed .event-dot { border-color: var(--urgent); }
+.event-time { color: var(--muted); font-size: 13px; padding-top: 1px; }
+.event-body { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.event-case { font-weight: 700; }
+
+/* ---- insights: single-series bars ----------------------------------------------------- */
+
+.chart { margin-top: 30px; padding: 20px; background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-md);
+  box-shadow: 0 16px 36px -22px rgba(0, 0, 0, 0.8); }
+.chart h2 { margin-bottom: 4px; }
+.bars { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 12px; }
+.bar-row { display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr) minmax(150px, auto); align-items: center; gap: 14px; }
+.bar-label { color: var(--text); font-weight: 600; }
+.bar-track { height: 10px; background: var(--ink); border-radius: 0 4px 4px 0; overflow: hidden; }
+.bar-fill { display: block; height: 100%; min-width: 2px; background: #b3bfcf; border-radius: 0 4px 4px 0; }
+.bar-row:hover .bar-fill { background: var(--text); }
+.bar-value { color: var(--muted); font-size: 14px; text-align: right; white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .bar-row { grid-template-columns: 1fr auto; }
+  .bar-track { grid-column: 1 / -1; grid-row: 2; }
+  .event { grid-template-columns: 22px minmax(0, 1fr); }
+  .event-time { grid-column: 2; }
+  .event-body { grid-column: 2; }
+}

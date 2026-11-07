@@ -45,7 +45,8 @@ log = logging.getLogger("disputedesk.webhooks")
 WEBHOOK_PATH = "/webhooks/paypal"  # the only route reachable through the ngrok tunnel
 WEB_DIR = Path(__file__).resolve().parent / "web"  # dashboard HTML, CSS and JS (no build step)
 # Dashboard pages: path -> HTML file. Each page reads only the existing read-only API.
-PAGES = {"/": "queue.html", "/overview": "overview.html", "/policies": "policies.html"}
+PAGES = {"/": "queue.html", "/overview": "overview.html", "/activity": "activity.html",
+         "/insights": "insights.html", "/policies": "policies.html"}
 
 # Header -> verify-webhook-signature body field.
 # https://developer.paypal.com/api/webhooks/v1/#verify-webhook-signature_post

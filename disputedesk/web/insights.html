@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DisputeDesk insights</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="narrow">
+    <h1>Insights</h1>
+    <p class="lede" id="scope">Counted from the disputes in the local store.</p>
+    <p class="banner" id="error" role="alert" hidden></p>
+    <div id="insights" aria-live="polite">
+      <div class="state"><p>Loading disputes from the local store.</p></div>
+    </div>
+  </main>
+
+  <script src="/static/common.js"></script>
+  <script src="/static/insights.js"></script>
+</body>
+</html>

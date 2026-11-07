@@ -173,3 +173,21 @@ def test_overview_page_is_served_local_only_and_in_nav(client):
     common = client.get("/static/common.js").text
     assert '["overview", "/overview", "Overview"]' in common
     assert "fetch(\"/api/disputes\"" in client.get("/static/overview.js").text  # existing API only
+
+
+@pytest.mark.parametrize("path,marker,script", [("/activity", 'id="activity"', "activity.js"),
+                                                ("/insights", 'id="insights"', "insights.js")])
+def test_activity_and_insights_pages(client, path, marker, script):
+    resp = client.get(path)
+    assert resp.status_code == 200 and marker in resp.text and resp.headers["cache-control"] == "no-cache"
+    assert client.get(path, headers=TUNNEL).status_code == 403
+    js = client.get(f"/static/{script}").text
+    # Built from the existing read-only API only; never writes.
+    assert "/api/disputes" in js and "method:" not in js and '"PUT"' not in js and '"POST"' not in js
+
+
+def test_nav_lists_built_pages_and_coming_soon():
+    common = (WEB / "static" / "common.js").read_text(encoding="utf-8")
+    for key in ("overview", "queue", "activity", "insights", "policies"):
+        assert f'["{key}", ' in common
+    assert 'const COMING_SOON = ["Graph", "System"];' in common
