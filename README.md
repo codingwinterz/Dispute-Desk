@@ -27,6 +27,7 @@ Sandbox only. There are no live credentials and no live base URL anywhere in thi
 - `disputedesk/seed.py`, `seed/merchant_data.json`: seeded merchant context
 - `disputedesk/policies.py`: merchant policy settings (SQLite) and the rules P1–P4 built from them
 - `disputedesk/drafts.py`: merchant-edited evidence drafts (SQLite)
+- `disputedesk/submissions.py`: approved responses to PayPal (the only PayPal writes) and their records
 - `disputedesk/decision.py`: LiteLLM decision step with schema validation and citation checks
 - `disputedesk/decision_store.py`: SQLite store of decisions
 - `disputedesk/analyzer.py`: worker thread that runs decisions automatically
@@ -103,20 +104,48 @@ by FastAPI, AG Grid Community from a CDN).
   filters; refreshes every 5 seconds and flashes cells that changed.
 - **Case** (`/case/{id}`): the recommendation, risk score, reasoning with the facts it cites, the draft
   response, and the graph path behind it with the cited nodes highlighted. Seeded records carry a
-  visible `seeded` tag. The Approve button is disabled: nothing is sent to PayPal yet.
+  visible `seeded` tag, plus the approval panel described below.
 - **Policies** (`/policies`): switch rules P1–P4 on or off and set their thresholds (accept under a
   dollar amount; how many other disputes must share a device or IP). The page shows the exact rule
   text the agent reads, built by the server. Saved policies apply to the next analysis; each decision
   stores the rules it was made under, and the case page shows the rules it cited.
 
-The draft response on the case page is editable. A saved draft is kept apart from the agent's
-decision (re-running the agent never overwrites it) and is the text that will be submitted once
-approval exists. Saving refuses a draft without the sentence saying shipment and device records are
-sandbox test data.
+## Approving a response (PayPal writes)
 
-Writes (`PUT /api/policies`, `PUT /api/drafts/{id}`, `POST /api/policies/preview`) accept JSON only,
-from this app's own pages (a foreign `Origin` is refused), and like every non-webhook route are
-local-only. They change the local SQLite file only; none calls PayPal.
+The case page's approval panel is the only way the app writes to PayPal. Nothing is ever sent from the
+poller, the webhook, the analyzer or app startup.
+
+- **What it sends.** DEFEND sends `POST /v1/customer/disputes/{id}/provide-evidence` as multipart
+  form data with one `input` part: `{"evidences": [{"evidence_type": "OTHER", "notes": <saved draft>}]}`.
+  No file is attached. ACCEPT sends `POST /v1/customer/disputes/{id}/accept-claim` with
+  `{"note": "Accepting the claim: full refund to the buyer."}`, which closes the dispute in the buyer's
+  favour and refunds the buyer. Sources: PayPal's Use Disputes API guide and the Disputes v1 spec.
+- **UNVERIFIED.** PayPal's docs don't show a notes-only evidence submission (their sample attaches a
+  file). The page says so until the first one succeeds; that success is recorded and the notice goes.
+- **Dry run.** "Show the exact request" builds the request from stored state, with the token
+  redacted, and sends nothing (`GET /api/submissions/{id}/dry-run`).
+- **Confirm.** Approve opens a dialog with the action, dispute ID, amount and the exact text PayPal will
+  receive. Only confirming calls `POST /api/submissions/{id}`, which needs `confirm: true` and the same
+  action and text the dialog showed.
+- **Checks before sending.** A recommendation exists and matches the action; the draft is within
+  PayPal's 2000-character notes limit and starts with the sandbox sentence; a fresh read from PayPal
+  shows `WAITING_FOR_SELLER_RESPONSE` and the action's link.
+- **One submit per dispute.** The attempt is recorded before sending. A second submit is blocked unless
+  PayPal definitely refused the last one (HTTP 4xx). A network error or 5xx leaves the outcome unknown,
+  so it stays blocked; check the dispute in the PayPal sandbox.
+- **Logs.** Every write and its response go to `logs/submit_http.jsonl`, with the token redacted.
+
+Each submission is irreversible in the sandbox, so testing again needs new sandbox disputes.
+
+The draft response on the case page is editable. A saved draft is kept apart from the agent's
+decision (re-running the agent never overwrites it) and is the text an approval sends. Saving
+refuses a draft over 2000 characters or one that doesn't start with the sentence saying shipment and
+device records are sandbox test data. Once a response is sent, the draft can't change.
+
+Writes (`PUT /api/policies`, `PUT /api/drafts/{id}`, `POST /api/policies/preview`,
+`POST /api/submissions/{id}`) accept JSON only, from this app's own pages (a foreign `Origin` is
+refused), and like every non-webhook route are local-only. Only `POST /api/submissions/{id}` calls
+PayPal.
 
 ```sh
 # run the app (webhook receiver + poller + analyzer + dashboard); optional: POLL_SECONDS=30 in .env
