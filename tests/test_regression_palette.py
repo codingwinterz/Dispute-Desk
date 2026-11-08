@@ -94,3 +94,12 @@ def test_dry_run_is_unchanged_and_read_only():
     dry = panel.split("dryButton.addEventListener", 1)[1].split("});", 1)[0]
     assert "method" not in dry and "POST" not in dry
     assert "Built from the last stored state of this dispute. Nothing was sent" in panel
+
+
+def test_approval_event_text_names_what_was_approved():
+    activity = (STATIC / "activity.js").read_text(encoding="utf-8")
+    for js in (activity, CASE):
+        assert 'provide_evidence: "You approved sending evidence to PayPal"' in js
+        assert 'accept_claim: "You approved accepting the claim"' in js
+    assert "You approved sending ${" not in activity  # the old template produced "sending accept the claim"
+    assert '"Approved and sent", ""]' not in CASE

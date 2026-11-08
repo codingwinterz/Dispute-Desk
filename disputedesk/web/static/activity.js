@@ -15,7 +15,8 @@
   let lastKey = "", lastItems = [];
   let filter = "all";
 
-  const ACTION = { provide_evidence: "evidence", accept_claim: "accept the claim" };
+  // What you approved, in the words the case timeline uses too (display text only).
+  const APPROVED = { provide_evidence: "You approved sending evidence to PayPal", accept_claim: "You approved accepting the claim" };
   // Event types: the filter chips and the per-day summaries use these words.
   const KINDS = [
     { key: "detected", label: "Detected", one: "detected", many: "detected" },
@@ -43,7 +44,7 @@
     if (draft && draft.edited) push(draft.updated_at, "edited", "You saved an edited draft.");
     const sub = submit && submit.submission;
     if (sub) {
-      push(sub.started_at, "approved", `You approved sending ${ACTION[sub.action] || sub.action} to PayPal.`);
+      push(sub.started_at, "approved", `${APPROVED[sub.action] || `You approved ${String(sub.action).replaceAll("_", " ")}`}.`);
       const result = {
         succeeded: [`PayPal accepted it (HTTP ${sub.http_status}).`, "sent"],
         rejected: [`PayPal refused it (HTTP ${sub.http_status}).`, "failed"],

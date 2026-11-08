@@ -497,7 +497,8 @@
         ? (afterEvent ? `Re-analyzed after the merchant event: ${verdict(rec)}, risk ${rec.risk_score}` : "Analyzed by the agent")
         : "Analysis failed") : "", rec && rec.status !== "ok" ? "failed" : ""],
       [draft && draft.edited ? draft.updated_at : null, "Draft edited and saved", ""],
-      [sub && sub.started_at, "Approved and sent", ""],
+      [sub && sub.started_at, sub ? ({ provide_evidence: "You approved sending evidence to PayPal", accept_claim: "You approved accepting the claim" }[sub.action]
+        || `You approved ${String(sub.action).replaceAll("_", " ")}`) : "", ""],
       [sub && sub.finished_at, sub ? { succeeded: `PayPal accepted it (HTTP ${sub.http_status})`, rejected: `PayPal refused it (HTTP ${sub.http_status})`, unknown: "Outcome unknown" }[sub.state] || "" : "",
        sub ? (sub.state === "succeeded" ? "done" : sub.state === "sending" ? "" : "failed") : ""],
     ].filter(([at, label]) => at && label).sort((a, b) => Date.parse(a[0]) - Date.parse(b[0]));
