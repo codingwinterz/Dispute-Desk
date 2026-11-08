@@ -115,7 +115,8 @@ def test_tangerine_stays_on_its_short_list():
 
 def test_red_only_for_errors_offline_and_overdue():
     allowed = (".banner", ".chip.error", ".live.is-offline", ".overdue", ".hero-line .hl.urgent", ".error-text",
-               ".result.error", ".event.failed", "li.failed", ".figure.urgent")
+               ".result.error", ".event.failed", "li.failed", ".figure.urgent",
+               ".kind-failed")  # the Activity filter chip for failures, labelled "Failed"
     for sel, body in rules():
         if "--danger" in body:
             assert any(a in sel for a in allowed), sel

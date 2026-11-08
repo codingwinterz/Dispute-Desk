@@ -158,3 +158,54 @@ def test_insights_colours_stay_in_budget_and_pass_contrast():
                             ("muted", "surface", 4.5), ("primary-text", "surface", 4.5), ("control-edge", "surface", 3.5),
                             ("primary", "surface", 3.5), ("danger", "surface", 3.5)]:
         assert ratio(TOKENS[fg], TOKENS[bg]) >= minimum, (fg, bg)
+
+
+# --- phase 3: merchant records and activity ---------------------------------------------------------
+
+RECORDS = (STATIC / "merchant_records.js").read_text(encoding="utf-8")
+RECORDS_HTML = (WEB / "merchant_records.html").read_text(encoding="utf-8")
+ACTIVITY = (STATIC / "activity.js").read_text(encoding="utf-8")
+ACTIVITY_HTML = (WEB / "activity.html").read_text(encoding="utf-8")
+PHASE3 = section("final design pass, phase 3")
+
+
+def test_records_and_activity_use_the_shared_hero_and_keep_the_production_note():
+    for html, page in ((RECORDS_HTML, "records"), (ACTIVITY_HTML, "activity")):
+        assert '<header class="page-hero">' in html and f'id="{page}-eyebrow"' in html and f'id="{page}-stats"' in html
+    assert 'id="note">In production your store supplies this; in the sandbox it is simulated.' in RECORDS_HTML
+    assert RECORDS.count("DD.sourceTag(") >= 4  # shipment, device, transaction and earlier-dispute tags stay
+
+
+def test_tracking_stepper_uses_only_stored_status_and_dates():
+    st = RECORDS.split("function stepper(s)", 1)[1].split("function shipmentCard(", 1)[0]
+    assert 'status === "DELIVERED" || Boolean(s.delivered_at)' in st
+    assert "Boolean(s.shipped_at)" in st and "s.signed_by_buyer !== undefined" in st
+    assert "when: s.shipped_at" in st and "when: s.delivered_at" in st
+    assert "Date.now()" not in RECORDS and "new Date()" not in st  # nothing estimated
+
+
+def test_devices_show_chips_and_linked_disputes_follow_the_graph_rule():
+    link = RECORDS.split("function linkedPast(telemetry, past)", 1)[1].split("// ---- shipment", 1)[0]
+    assert "p.telemetry.device_hash === telemetry.device_hash" in link and "p.telemetry.ip === telemetry.ip" in link
+    for chip in ('chip("Device", t.device_hash', 'chip("IP", t.ip', 'chip("Location", t.geo'):
+        assert chip in RECORDS
+    assert ".link-tree::before {" in PHASE3 and ".link-tree li::before {" in PHASE3  # the drawn connector
+    assert 'text: `linked to ${linkedTo.get(p).join(", ")}`' in RECORDS  # tagged in the Earlier list
+
+
+def test_activity_filters_summaries_nodes_and_milestones():
+    assert 'const groupOf = (kind) => (kind === "approved" || kind === "sent" ? "milestone" : kind);' in ACTIVITY
+    assert '"aria-pressed": String(filter === key)' in ACTIVITY and "again.focus()" in ACTIVITY
+    assert "function summary(events)" in ACTIVITY and 'class: "day-summary"' in ACTIVITY
+    assert ".event.milestone .event-dot {" in PHASE3 and ".event.milestone .event-body {" in PHASE3
+    for kind in ("analyzed", "edited", "milestone", "failed"):
+        assert f".kind-{kind} .chip-node" in PHASE3  # the chips double as the legend
+
+
+def test_phase3_colours_stay_in_budget_and_pass_contrast():
+    assert "--splash" not in PHASE3  # the approval milestone is blue, not tangerine
+    for fg, bg, minimum in [("text", "surface", 4.5), ("primary-text", "surface", 4.5), ("muted", "surface", 4.5),
+                            ("on-primary", "primary-fill", 4.5), ("muted", "ground", 4.5), ("text", "ground", 4.5),
+                            ("control-edge", "surface", 3.5), ("primary", "ground", 3.5), ("primary", "surface", 3.5),
+                            ("danger", "surface", 3.5)]:
+        assert ratio(TOKENS[fg], TOKENS[bg]) >= minimum, (fg, bg)

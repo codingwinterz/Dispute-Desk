@@ -151,9 +151,9 @@ def test_insights_charts_open_with_stacked_headers_and_reveal():
 
 def test_activity_and_records_reveal_and_restyle():
     activity = (WEB / "static" / "activity.js").read_text(encoding="utf-8")
-    assert "DD.reveal(days)" in activity and "root.replaceChildren(...days)" in activity
+    assert "DD.revealStaggered(days)" in activity and "root.replaceChildren(filterChips(all), ...days)" in activity
     records = (WEB / "static" / "merchant_records.js").read_text(encoding="utf-8")
-    assert '{ text: "Earlier" }' in records and "DD.reveal(" in records
+    assert '{ text: "Earlier" }' in records and "DD.revealStaggered(" in records
     assert ".rule-id { font-family: var(--font-display)" in CSS
 
 

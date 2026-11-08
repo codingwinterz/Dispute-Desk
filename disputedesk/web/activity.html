@@ -12,8 +12,12 @@
 </head>
 <body>
   <main class="narrow">
-    <h1>Activity</h1>
-    <p class="lede">What happened to each dispute, newest first: when it was detected, analyzed, edited and sent to PayPal.</p>
+    <header class="page-hero">
+      <p class="eyebrow" id="activity-eyebrow">Activity</p>
+      <h1>Activity</h1>
+      <p class="lede">What happened to each dispute, newest first: when it was detected, analyzed, edited and sent to PayPal.</p>
+      <ul class="stat-chips" id="activity-stats" aria-label="Activity counts"></ul>
+    </header>
     <p class="banner" id="error" role="alert" hidden></p>
     <div id="activity" aria-live="polite">
       <div class="state"><p>Loading activity from the local store.</p></div>

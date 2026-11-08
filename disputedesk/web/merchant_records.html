@@ -12,9 +12,13 @@
 </head>
 <body>
   <main class="narrow">
-    <h1>Merchant records</h1>
-    <p class="lede">The shipments and checkout devices behind each disputed transaction, and earlier disputes on file.
-      The agent reads these alongside PayPal's own records.</p>
+    <header class="page-hero">
+      <p class="eyebrow" id="records-eyebrow">Merchant records</p>
+      <h1>Merchant records</h1>
+      <p class="lede">The shipments and checkout devices behind each disputed transaction, and earlier disputes on file.
+        The agent reads these alongside PayPal's own records.</p>
+      <ul class="stat-chips" id="records-stats" aria-label="Record counts"></ul>
+    </header>
     <p class="notice" id="note">In production your store supplies this; in the sandbox it is simulated.</p>
     <p class="banner" id="error" role="alert" hidden></p>
     <div id="records" aria-live="polite">
