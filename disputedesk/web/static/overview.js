@@ -89,20 +89,37 @@
       el("div", { class: "ticker-track" }, group(false), group(true)));
   }
 
-  function folderRow(d) {
+  // A case card: the verdict as a huge word and the risk score as a large number. On hover or keyboard
+  // focus the summary layer gives way to the agent's main reason. No recommendation: no verdict, no swap.
+  function caseCard(d) {
     const href = `/case/${encodeURIComponent(d.dispute_id)}`;
-    return el("a", { class: "folder-row", href },
-      el("span", { class: "folder-due" }, DD.countdownNode(d.seller_response_due_date)),
-      el("span", { class: "folder-main" },
-        el("span", { class: "folder-id num", text: d.dispute_id }),
-        el("span", { class: "folder-meta" },
-          el("span", { text: DD.reasonLabel(d.reason) }),
-          el("span", { class: "num", text: DD.money(d.amount) }),
-          el("span", { class: `badge ${DD.statusClass(d.status)}`, text: DD.statusLabel(d.status) }))),
-      el("span", { class: "folder-side" },
-        DD.decisionChip(d.decision),
-        d.decision && d.decision.status === "ok" ? DD.riskNode(d.decision.risk_score) : null,
-        DD.sourceTag(d.source)));
+    const decided = d.decision && d.decision.status === "ok";
+    const summary = el("div", { class: "card-layer card-front" },
+      decided ? el("div", { class: "card-verdict" },
+        el("span", { class: "verdict-word", text: d.decision.decision }),
+        el("span", { class: "card-risk", title: "Likelihood, 0 to 100, that the buyer's claim is valid, from the evidence on file" },
+          el("span", { class: "risk-number num", text: String(d.decision.risk_score) }),
+          el("span", { class: "cap", text: "risk" }))) : null,
+      el("div", { class: "card-summary" },
+        el("span", { text: DD.reasonLabel(d.reason) }),
+        el("span", { class: "num", text: DD.money(d.amount) }),
+        el("span", { class: `badge ${DD.statusClass(d.status)}`, text: DD.statusLabel(d.status) })),
+      el("div", { class: "card-due" }, DD.countdownNode(d.seller_response_due_date)));
+    const card = el("a", { class: `case-card${decided ? " has-reason" : ""}`, href },
+      el("h3", { class: "card-id num", text: d.dispute_id }),
+      DD.caseCaption(d),
+      el("div", { class: "card-stage" }, summary));
+    if (decided) {
+      const back = el("div", { class: "card-layer card-back" },
+        el("span", { class: "cap", text: "the agent's main reason" }),
+        el("p", { class: "card-reason", text: "Loading the main reason." }));
+      card.querySelector(".card-stage").append(back);
+      DD.topReason(d).then((text) => {
+        if (text) back.querySelector(".card-reason").textContent = text;
+        else { back.remove(); card.classList.remove("has-reason"); }  // no stored reason: nothing to swap to
+      });
+    }
+    return card;
   }
 
   function render(rows, firstRender) {
@@ -121,8 +138,8 @@
       ? el("section", { class: "folders" },
           el("div", { class: "stack-head" },
             el("h2", {}, el("span", { text: "Open" }), el("span", { text: "cases" })),
-            el("span", { class: "cap", text: "Soonest deadline first. Cases PayPal is reviewing have no deadline and come last." })),
-          el("div", { class: "folder-stack" }, ...open.map(folderRow)))
+            el("span", { class: "cap", text: "Soonest deadline first. Hover or focus a card for the agent's main reason." })),
+          el("div", { class: "case-cards" }, ...open.map(caseCard)))
       : el("section", { class: "folders" }, el("p", { class: "lede", text: `All ${rows.length} disputes in the local store are resolved.` }));
 
     root.replaceChildren(el("h1", { class: "sr-only", text: "Overview" }), hero(waiting, heroNext, firstRender), ticker(waiting, heroNext), cases);

@@ -85,6 +85,34 @@ const DD = (() => {
     }
   }
 
+  // ---- the agent's main reason (read-only, cached) -----------------------------------------
+  // From the existing GET /api/decisions/{id}; fetched once per dispute and decision, and only for
+  // disputes with a recommendation. Resolves to "" when there is no stored reason.
+  const reasonCache = new Map();  // dispute_id -> { key, promise }
+  function topReason(row) {
+    const d = row && row.decision;
+    if (!d || d.status !== "ok") return Promise.resolve("");
+    const cached = reasonCache.get(row.dispute_id);
+    if (cached && cached.key === d.created_at) return cached.promise;
+    const promise = fetch(`/api/decisions/${encodeURIComponent(row.dispute_id)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => {
+        const first = body && body.decision && body.decision.reasoning && body.decision.reasoning[0];
+        return first ? first.point : "";
+      })
+      .catch(() => "");
+    reasonCache.set(row.dispute_id, { key: d.created_at, promise });
+    return promise;
+  }
+
+  // Caption metadata: "PP-R-QQW . due Nov 15" plus the record's source tag.
+  function caseCaption(row) {
+    const shortId = String(row.dispute_id).split("-").slice(0, 3).join("-");
+    const due = row.seller_response_due_date ? `due ${dueDate(row.seller_response_due_date).split(",")[0]}` : "under PayPal review";
+    return el("span", { class: "cap" }, shortId, el("span", { class: "sep", text: "." }), due,
+      el("span", { class: "sep", text: "." }), sourceTag(row.source));
+  }
+
   // ---- motion helpers --------------------------------------------------------------------
   const reducedMotion = () => Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
@@ -220,6 +248,6 @@ const DD = (() => {
       el("span", { text: String(score) }), bar);
   }
 
-  return { el, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
+  return { el, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
            dueDate, sourceTag, decisionChip, riskNode, tick };
 })();
