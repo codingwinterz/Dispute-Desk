@@ -93,7 +93,7 @@
       : null;
 
     root.replaceChildren(
-      el("h1", { class: "sr-only", text: "Overview" }),
+      el("h1", { text: "What needs you now" }),
       hero, strip, list);
   }
 

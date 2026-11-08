@@ -18,9 +18,8 @@ const DD = (() => {
   }
 
   // ---- app shell: sidebar + top bar --------------------------------------------------
-  // Pages whose data exists are links; the rest are listed as coming soon, never as dead links.
+  // Only working pages are listed.
   const PAGES = { overview: "Overview", queue: "Dispute queue", activity: "Activity", insights: "Insights", records: "Merchant records", policies: "Dispute policies", case: "Case" };
-  const COMING_SOON = ["Graph", "System"];
 
   function renderNav(current, title) {
     const links = [["overview", "/overview", "Overview"], ["queue", "/", "Queue"], ["activity", "/activity", "Activity"],
@@ -29,10 +28,7 @@ const DD = (() => {
     const sidebar = el("aside", { class: "sidebar" },
       el("a", { class: "brand", href: "/" }, el("span", { class: "tab", "aria-hidden": "true" }), "DisputeDesk"),
       el("nav", { class: "side-links", "aria-label": "Main" }, ...links.map(([key, href, label]) =>
-        el("a", { href, "aria-current": key === current ? "page" : null, text: label }))),
-      el("div", { class: "side-soon" },
-        el("p", { class: "soon-title", id: "soon-title", text: "Coming soon" }),
-        el("ul", { "aria-labelledby": "soon-title" }, ...COMING_SOON.map((name) => el("li", { text: name })))));
+        el("a", { href, "aria-current": key === current ? "page" : null, text: label }))));
     const live = el("span", { class: "live", id: "live", role: "status", "aria-live": "polite" },
       el("span", { class: "dot", "aria-hidden": "true" }),
       el("span", { class: "live-label", text: "Connecting" }),
@@ -42,7 +38,11 @@ const DD = (() => {
       el("div", { class: "topbar-status" }, live,
         el("span", { class: "env", title: "Every call goes to api-m.sandbox.paypal.com; there are no live credentials.", text: "PayPal sandbox" })));
     document.body.classList.add("shell");
-    document.body.prepend(sidebar, topbar);
+    // Keyboard users can jump past the sidebar to the page content.
+    const main = document.querySelector("main");
+    if (main) { main.id = main.id || "content"; main.tabIndex = -1; }
+    const skip = el("a", { class: "skip-link", href: `#${main ? main.id : "content"}`, text: "Skip to content" });
+    document.body.prepend(skip, sidebar, topbar);
     modeReady.then((m) => {
       if (!m.demo) return;
       const recorded = m.recorded_at ? new Date(m.recorded_at).toLocaleString() : "an earlier session";

@@ -186,8 +186,42 @@ def test_activity_and_insights_pages(client, path, marker, script):
     assert "/api/disputes" in js and "method:" not in js and '"PUT"' not in js and '"POST"' not in js
 
 
-def test_nav_lists_built_pages_and_coming_soon():
+def test_nav_lists_only_working_pages_and_a_skip_link():
     common = (WEB / "static" / "common.js").read_text(encoding="utf-8")
-    for key in ("overview", "queue", "activity", "insights", "policies"):
+    for key in ("overview", "queue", "activity", "insights", "records", "policies"):
         assert f'["{key}", ' in common
-    assert 'const COMING_SOON = ["Graph", "System"];' in common
+    assert "COMING_SOON" not in common and "Coming soon" not in common
+    assert '"Skip to content"' in common
+
+
+def test_queue_reason_line_uses_existing_read_only_api_and_leaves_columns_alone():
+    js = (WEB / "static" / "queue.js").read_text(encoding="utf-8")
+    assert "onCellMouseOver" in js and "onCellFocused" in js and "fetch(`/api/decisions/" in js
+    assert "reasoning[0]" in js and '"method"' not in js
+    headers = [h for h in ("Respond within", "Dispute", "Reason", "Amount", "Status", "Recommended", "Risk", "Source")]
+    assert all(f'headerName: "{h}"' in js for h in headers) and js.count("headerName:") == len(headers)
+
+
+def test_case_timeline_uses_stored_timestamps_only():
+    js = (WEB / "static" / "case.js").read_text(encoding="utf-8")
+    body = js.split("function caseTimeline", 1)[1].split("function disposeGraph", 1)[0]
+    assert "fetch(" not in body  # built from the case response already loaded
+    for stamp in ("detected_at", "created_at", "updated_at", "started_at", "finished_at"):
+        assert stamp in body
+
+
+def test_contrast_tokens_meet_wcag():
+    css = (WEB / "static" / "app.css").read_text(encoding="utf-8")
+    def lum(h):
+        r, g, b = (int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))
+        f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4  # noqa: E731
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+    def ratio(a, b):
+        hi, lo = sorted((lum(a), lum(b)), reverse=True)
+        return (hi + 0.05) / (lo + 0.05)
+    tokens = dict(re.findall(r"--([a-z0-9-]+):\s*(#[0-9a-f]{6})", css))
+    surfaces = [tokens[k] for k in ("ink-0", "ink", "panel", "panel-2")]
+    for text in ("text", "muted", "accent", "urgent", "placeholder"):
+        assert min(ratio(tokens[text], s) for s in surfaces) >= 4.5, text
+    assert min(ratio(tokens["control-edge"], s) for s in surfaces) >= 3.0
+    assert ratio(tokens["accent-ink"], tokens["accent"]) >= 4.5
