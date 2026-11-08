@@ -209,21 +209,79 @@
     if (old) old.replaceWith(countdownLine(heroNext));
   }, 1000);
 
-  // Gentle parallax on the two hero lines: pointer position -> CSS variables, at most once per frame.
-  // Off under reduced motion, on touch-only devices, and while the tab is hidden.
-  if (!DD.reducedMotion() && window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
-    let frame = 0, px = 0, py = 0;
-    window.addEventListener("pointermove", (e) => {
-      px = (e.clientX / window.innerWidth - 0.5) * 2;
-      py = (e.clientY / window.innerHeight - 0.5) * 2;
-      if (frame || document.hidden) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        const board = root.querySelector(".hero-board");
-        if (board) { board.style.setProperty("--px", px.toFixed(3)); board.style.setProperty("--py", py.toFixed(3)); }
-      });
-    }, { passive: true });
-  }
+  // ---- pointer effects, on the shared DDPointer loop (off on touch, under reduced motion, in hidden tabs) ----
+
+  // Gentle parallax on the two hero lines: eased pointer position -> CSS variables.
+  const par = { x: 0, y: 0 };
+  DDPointer.subscribe((dt, p) => {
+    const tx = p.inside ? (p.x / p.vw - 0.5) * 2 : 0, ty = p.inside ? (p.y / p.vh - 0.5) * 2 : 0;
+    par.x = DDPointer.ease(par.x, tx, dt, 160);
+    par.y = DDPointer.ease(par.y, ty, dt, 160);
+    const board = root.querySelector(".hero-board");
+    if (board) { board.style.setProperty("--px", par.x.toFixed(3)); board.style.setProperty("--py", par.y.toFixed(3)); }
+    return !(DDPointer.settled(par.x, tx, 0.002) && DDPointer.settled(par.y, ty, 0.002));
+  }, () => {
+    const board = root.querySelector(".hero-board");
+    if (board) { board.style.removeProperty("--px"); board.style.removeProperty("--py"); }
+  });
+
+  // Tilt and glare on the case cards: up to MAX_TILT degrees toward the pointer, with a soft blue glare
+  // that follows it. Pointer events only pick the active card; the loop reads its size once per
+  // activation (and after scrolling), never inside a pointer handler.
+  const MAX_TILT = 7;
+  const cards = new Map();   // card -> { rx, ry, gx, gy, g, box }
+  let activeCard = null, boxDirty = true;
+  root.addEventListener("pointerover", (e) => {
+    const card = e.target.closest && e.target.closest(".case-card");
+    if (card === activeCard) return;
+    activeCard = card;
+    boxDirty = true;
+    if (card && !cards.has(card)) cards.set(card, { rx: 0, ry: 0, gx: 50, gy: 50, g: 0, box: null });
+    DDPointer.kick();
+  });
+  root.addEventListener("pointerleave", () => { activeCard = null; DDPointer.kick(); });
+  window.addEventListener("scroll", () => { boxDirty = true; }, { passive: true });
+  DDPointer.subscribe((dt, p) => {
+    let busy = false;
+    for (const [card, st] of cards) {
+      if (!card.isConnected) { cards.delete(card); continue; }
+      const active = card === activeCard && p.inside;
+      if (active && (boxDirty || !st.box)) {
+        // Untransformed size, and the centre (which a centred tilt does not move).
+        const r = card.getBoundingClientRect();
+        st.box = { cx: r.left + r.width / 2, cy: r.top + r.height / 2, hw: card.offsetWidth / 2, hh: card.offsetHeight / 2 };
+        boxDirty = false;
+      }
+      let nx = 0, ny = 0;
+      if (active && st.box) {
+        nx = Math.max(-1, Math.min(1, (p.x - st.box.cx) / st.box.hw));
+        ny = Math.max(-1, Math.min(1, (p.y - st.box.cy) / st.box.hh));
+      }
+      const trx = -ny * MAX_TILT, try_ = nx * MAX_TILT, tg = active ? 1 : 0;
+      st.rx = DDPointer.ease(st.rx, trx, dt, 110);
+      st.ry = DDPointer.ease(st.ry, try_, dt, 110);
+      st.gx = DDPointer.ease(st.gx, (nx + 1) * 50, dt, 90);
+      st.gy = DDPointer.ease(st.gy, (ny + 1) * 50, dt, 90);
+      st.g = DDPointer.ease(st.g, tg, dt, 160);
+      const resting = !active && Math.abs(st.rx) < 0.02 && Math.abs(st.ry) < 0.02 && st.g < 0.005;
+      if (resting) {
+        card.style.removeProperty("transform");
+        card.style.removeProperty("--glare-on");
+        cards.delete(card);
+        continue;
+      }
+      card.style.transform = `perspective(900px) rotateX(${st.rx.toFixed(2)}deg) rotateY(${st.ry.toFixed(2)}deg)`;
+      card.style.setProperty("--gx", `${st.gx.toFixed(1)}%`);
+      card.style.setProperty("--gy", `${st.gy.toFixed(1)}%`);
+      card.style.setProperty("--glare-on", st.g.toFixed(3));
+      if (!(DDPointer.settled(st.rx, trx, 0.02) && DDPointer.settled(st.ry, try_, 0.02) && DDPointer.settled(st.g, tg, 0.004)
+            && DDPointer.settled(st.gx, (nx + 1) * 50, 0.2) && DDPointer.settled(st.gy, (ny + 1) * 50, 0.2))) busy = true;
+    }
+    return busy;
+  }, () => {
+    for (const card of cards.keys()) { card.style.removeProperty("transform"); card.style.removeProperty("--glare-on"); }
+    cards.clear();
+  });
 
   async function refresh() {
     try {

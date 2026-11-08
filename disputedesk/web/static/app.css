@@ -29,9 +29,12 @@
   --sheen: #ffffff;
   /* depth lighting: blue only, static. Peak strengths are contrast-tested with the grain composited. */
   --lift-ground: 4%;        /* top of the page ground, fading down to --ground-deep */
-  --glow-hero: 9%;          /* behind the Overview case map */
-  --glow-hero-soft: 5%;     /* behind the Overview hero type */
+  --glow-hero: 12%;         /* behind the Overview case map */
+  --glow-hero-soft: 7%;     /* behind the Overview hero type */
   --glow-verdict: 9%;       /* inside the case page's verdict panel */
+  --glow-spotlight: 11%;    /* the cursor spotlight on the page background */
+  --glare: 10%;             /* the glare on a tilted Overview card (painted under its text) */
+  --spot-size: 760px;
   /* layered shadows: a contact shadow plus a long soft one, neutral shade only */
   --shadow-1: 0 1px 0 color-mix(in srgb, var(--sheen) 3%, transparent) inset, 0 1px 2px color-mix(in srgb, var(--shade) 45%, transparent),
               0 10px 22px -14px color-mix(in srgb, var(--shade) 75%, transparent);
@@ -979,13 +982,15 @@ button.primary.approve:disabled { background: var(--border); color: var(--muted)
 
 /* ---- palette pass, phase 2: depth lighting (static, blue and neutral only) ---------------------- */
 /* Soft blue light behind the Overview hero: a stronger pool behind the case map, a faint one behind
-   the type. The two pools don't overlap, and each is contrast-tested on top of the ground lift. */
-.hero-split { position: relative; isolation: isolate; }
+   the type. Lights are painted as blue-tinted ground and blend with mix-blend-mode: lighten, so where
+   two lights meet (a pool and the cursor spotlight) the brighter wins; they never add up. Each light's
+   peak is contrast-tested on its own. */
+.hero-split { position: relative; }
 .hero-split::before {
-  content: ""; position: absolute; inset: -48px -24px -24px; z-index: -1; pointer-events: none;
+  content: ""; position: absolute; inset: -48px -24px -24px; z-index: -1; pointer-events: none; mix-blend-mode: lighten;
   background:
-    radial-gradient(ellipse 34% 62% at 76% 50%, color-mix(in srgb, var(--primary) var(--glow-hero), transparent) 0%, transparent 70%),
-    radial-gradient(ellipse 28% 50% at 18% 46%, color-mix(in srgb, var(--primary) var(--glow-hero-soft), transparent) 0%, transparent 70%);
+    radial-gradient(ellipse 34% 62% at 76% 50%, color-mix(in srgb, var(--primary) var(--glow-hero), var(--ground)) 0%, transparent 70%),
+    radial-gradient(ellipse 28% 50% at 18% 46%, color-mix(in srgb, var(--primary) var(--glow-hero-soft), var(--ground)) 0%, transparent 70%);
 }
 /* Layered shadows: each raised surface gets a contact shadow plus a long soft one. */
 .sidebar { box-shadow: 10px 0 40px -18px color-mix(in srgb, var(--shade) 70%, transparent); }
@@ -995,3 +1000,24 @@ button.primary.approve:disabled { background: var(--border); color: var(--muted)
 #grid.ag-theme-quartz-dark { box-shadow: var(--shadow-2); }   /* the grid's frame only; rows are untouched */
 .rec-block, .rec-past-list li, .draft, .agent-reads blockquote { box-shadow: var(--shadow-1); }
 .side-links a[aria-current="page"] { box-shadow: var(--shadow-1); }
+
+/* ---- palette pass, phase 3: cursor spotlight and card tilt + glare (driven by pointer.js) ---------- */
+/* The spotlight: a pre-painted blue disc under all content, moved with transform only. Hidden until a
+   fine pointer moves; never shown on touch devices or under reduced motion. */
+.spotlight {
+  position: fixed; left: 0; top: 0; z-index: -1; pointer-events: none;
+  width: var(--spot-size); height: var(--spot-size); margin: calc(var(--spot-size) / -2) 0 0 calc(var(--spot-size) / -2);
+  border-radius: 50%; opacity: 0; mix-blend-mode: lighten; will-change: transform, opacity;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--primary) var(--glow-spotlight), var(--ground)) 0%, transparent 100%);
+}
+/* Card glare: under the card's text (z-index -1 inside the card's own stacking context). */
+.case-card { isolation: isolate; transform-origin: 50% 50%; will-change: auto; }
+.case-card::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; border-radius: inherit;
+  background: radial-gradient(360px circle at var(--gx, 50%) var(--gy, 50%), color-mix(in srgb, var(--primary) var(--glare), transparent) 0%, transparent 70%);
+  opacity: var(--glare-on, 0);
+}
+@media (prefers-reduced-motion: reduce), (hover: none), (pointer: coarse) {
+  .spotlight, .case-card::before { display: none; }
+  .case-card { transform: none !important; }
+}

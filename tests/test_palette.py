@@ -164,19 +164,40 @@ def _pct(name):
     return float(re.search(rf"--{name}:\s*([0-9.]+)%", ROOT_BLOCK).group(1)) / 100
 
 
+def _chmax(a, b):
+    """Channel-wise maximum: what mix-blend-mode: lighten paints for an opaque light over a backdrop."""
+    return "#" + "".join(f"{max(int(a[i:i + 2], 16), int(b[i:i + 2], 16)):02x}" for i in (1, 3, 5))
+
+
+def _blends_lighten(selector):
+    rule = re.search(re.escape(selector) + r" \{([^}]*)\}", AFTER_ROOT).group(1)
+    return "mix-blend-mode: lighten" in rule, rule
+
+
 def _lit_backgrounds():
-    """The brightest point of every lit area, with the grain on top for the page ground. The two hero
-    pools don't overlap (by geometry), so each is stacked on the ground lift separately."""
+    """The brightest point of every lit area. The ground carries the lift and the grain. Lights drawn as
+    opaque blue-tinted ground with mix-blend-mode: lighten (hero pools, cursor spotlight) take the
+    channel-wise maximum with whatever is under them, so overlapping lights never add; if a light is not
+    drawn that way, it is stacked additively instead (the stricter model)."""
     grain = float(re.search(r"opacity='([0-9.]+)'", re.search(r"--grain:\s*(url\([^;]+\));", CSS).group(1)).group(1))
     blue, lift = TOKENS["primary"], _pct("lift-ground")
     lifted = over(TOKENS["ground"], blue, lift)
-    out = {"ground lift": lifted,
-           "ground lift + hero glow": over(lifted, blue, _pct("glow-hero")),
-           "ground lift + soft hero glow": over(lifted, blue, _pct("glow-hero-soft"))}
-    for k in list(out):
-        out[k + " + light grain"] = over(out[k], "#ffffff", grain)
-        out[k + " + dark grain"] = over(out[k], "#000000", grain)
+    grounds = {"ground lift": lifted, "ground lift + light grain": over(lifted, "#ffffff", grain),
+               "ground lift + dark grain": over(lifted, "#000000", grain)}
+    out = dict(grounds)
+    lights = {"hero glow": (".hero-split::before", "glow-hero"), "soft hero glow": (".hero-split::before", "glow-hero-soft"),
+              "cursor spotlight": (".spotlight", "glow-spotlight")}
+    for name, (selector, token) in lights.items():
+        lighten, rule = _blends_lighten(selector)
+        assert f"var(--{token})" in rule, (selector, token)
+        for gname, g in grounds.items():
+            if lighten and f"var(--{token}), var(--ground))" in rule:   # opaque tinted ground, blended lighten
+                out[f"{gname} under {name}"] = _chmax(g, over(TOKENS["ground"], blue, _pct(token)))
+            else:                                                       # otherwise: add it on top
+                out[f"{gname} + {name}"] = over(g, blue, _pct(token))
+    # the two hero pools and the spotlight can meet: under lighten the brightest wins; the strongest is above
     out["verdict panel glow"] = over(TOKENS["surface"], blue, _pct("glow-verdict"))
+    out["card glare (under the text)"] = over(TOKENS["surface"], blue, _pct("glare"))
     return out
 
 
@@ -205,3 +226,45 @@ def test_lighting_uses_blue_and_neutral_tokens_only_and_never_moves():
 def test_lighting_leaves_grid_rows_and_the_approve_dialog_alone():
     phase = CSS.split("palette pass, phase 2: depth lighting")[1]
     assert ".ag-row" not in phase and "dialog" not in phase and ".confirm" not in phase
+
+
+# --- phase 3: cursor spotlight, card tilt and glare -----------------------------------------------
+
+POINTER = (WEB / "static" / "pointer.js").read_text(encoding="utf-8")
+OVERVIEW = (WEB / "static" / "overview.js").read_text(encoding="utf-8")
+
+
+def test_one_shared_animation_loop_with_no_layout_reads_in_pointer_handlers():
+    assert POINTER.count("requestAnimationFrame(frame)") == 2 and "requestAnimationFrame" not in OVERVIEW
+    move = POINTER.split('window.addEventListener("pointermove"', 1)[1].split("});", 1)[0]
+    for read in ("getBoundingClientRect", "offsetWidth", "offsetHeight", "clientWidth", "getComputedStyle", "style."):
+        assert read not in move, read
+    over_handler = OVERVIEW.split('root.addEventListener("pointerover"', 1)[1].split("});", 1)[0]
+    assert "getBoundingClientRect" not in over_handler and "offset" not in over_handler
+    assert "(1 - Math.exp(-dt / tau))" in POINTER  # eased, frame-rate independent
+
+
+def test_pointer_effects_are_off_on_touch_reduced_motion_and_hidden_tabs():
+    assert '"(hover: hover) and (pointer: fine)"' in POINTER and '"(prefers-reduced-motion: reduce)"' in POINTER
+    assert "document.hidden" in POINTER and "visibilitychange" in POINTER
+    phase = CSS.split("palette pass, phase 3")[1]
+    assert "@media (prefers-reduced-motion: reduce), (hover: none), (pointer: coarse)" in phase
+    assert ".spotlight, .case-card::before { display: none; }" in phase
+
+
+def test_tilt_is_at_most_7_degrees_and_effects_stay_off_grid_rows_and_the_dialog():
+    assert "const MAX_TILT = 7;" in OVERVIEW and ".case-card" in OVERVIEW
+    for js in (POINTER, OVERVIEW.split("pointer effects, on the shared DDPointer loop", 1)[1]):
+        code = re.sub(r"//.*", "", js)  # the code, not the comments that explain the rule
+        assert ".ag-" not in code and "dialog" not in code
+    phase = CSS.split("palette pass, phase 3")[1]
+    assert ".ag-row" not in phase and "dialog" not in phase
+
+
+def test_spotlight_is_blue_and_every_page_loads_the_shared_pointer_module():
+    rule = re.search(r"\.spotlight \{([^}]*)\}", CSS).group(1)
+    assert "var(--primary) var(--glow-spotlight)" in rule and "--splash" not in rule
+    assert "translate3d" in POINTER and "mix-blend-mode: lighten" in rule
+    for page in WEB.glob("*.html"):
+        html = page.read_text(encoding="utf-8")
+        assert html.index("/static/common.js") < html.index("/static/pointer.js"), page.name
