@@ -17,6 +17,7 @@
   window.addEventListener("pagehide", disposeMap);
   // The map's layout follows its own width (narrow column or phone): swap it when that crosses over.
   let lastRows = [];
+  let pipe = null;       // the agent pipeline strip under the ticker (DDPipe)
   const mapWidth = () => { const s = root.querySelector(".hero-split"); return s ? s.clientWidth : root.clientWidth; };
   const wantCompact = () => {
     const w = mapWidth();
@@ -161,6 +162,7 @@
     lastRows = rows;
     if (!rows.length) {
       heroNext = null;
+      pipe = null;
       root.replaceChildren(el("div", { class: "state" },
         el("h1", { text: "No disputes yet" }),
         el("p", { text: "When a buyer opens a dispute in the PayPal sandbox, the poller picks it up within 10 seconds and it appears here." })));
@@ -188,8 +190,10 @@
     // The hero: stacked type on the left, the case map on the right (below it on narrow screens).
     map = DDMap.create(rows, { compact: wantCompact() });
     const split = el("div", { class: "hero-split" }, hero(waiting, heroNext, firstRender), map.node);
-    root.replaceChildren(el("h1", { class: "sr-only", text: "Overview" }), split, ticker(waiting, heroNext), cases);
+    pipe = DDPipe.create(rows, firstRender);
+    root.replaceChildren(el("h1", { class: "sr-only", text: "Overview" }), split, ticker(waiting, heroNext), pipe.node, cases);
     map.start();
+    pipe.update(rows);
     DD.reveal([cases]);
   }
 
@@ -243,4 +247,6 @@
 
   refresh();
   setInterval(refresh, POLL_MS);
+  // Submissions don't always change /api/disputes at once: recount the pipeline every 30 seconds.
+  setInterval(() => { if (pipe && !document.hidden) pipe.update(lastRows); }, 30000);
 })();

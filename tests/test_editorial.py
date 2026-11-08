@@ -288,3 +288,59 @@ def test_overview_loads_the_pinned_three_js_and_collapses_the_map_on_narrow_scre
 def test_wide_content_never_widens_the_page_on_phones():
     # The ticker track is max-content wide; the shell's grid item must be allowed to shrink below it.
     assert re.search(r"body\.shell > main \{[^}]*min-width: 0;", CSS)
+
+
+# --- visual moments, phase 3: agent pipeline strip and favicon --------------------------------
+
+PIPELINE = (WEB / "static" / "pipeline.js").read_text(encoding="utf-8")
+
+_PIPE_PROBE = r"""
+const DDPipe = require(process.argv[1]);
+const W = "WAITING_FOR_SELLER_RESPONSE";
+const rows = [
+  { dispute_id: "A", status: W },             // decided, graph ok, awaiting approval
+  { dispute_id: "B", status: W },             // decided, submission in flight -> not awaiting approval
+  { dispute_id: "C", status: "UNDER_REVIEW" }, // decided, sent to PayPal
+  { dispute_id: "D", status: W },             // graph down: error, no context
+  { dispute_id: "E", status: W },             // not analysed yet
+];
+const ok = { status: "ok", graph_context: { dispute: {} } };
+const records = {
+  A: { decision: ok, submit: { submission: null } },
+  B: { decision: ok, submit: { submission: { state: "sending" } } },
+  C: { decision: ok, submit: { submission: { state: "succeeded" } } },
+  D: { decision: { status: "error", graph_context: null }, submit: { submission: null } },
+  E: { decision: null, submit: { submission: null } },
+};
+console.log(JSON.stringify({ c: DDPipe.counts(rows, records), empty: DDPipe.counts([], {}), steps: DDPipe.STEPS.map((s) => s.title) }));
+"""
+
+
+def test_pipeline_counts_each_step_from_stored_records():
+    node = _shutil.which("node")
+    if not node:
+        _pytest.skip("Node.js is not installed")
+    out = _json.loads(_subprocess.run([node, "-e", _PIPE_PROBE, str(WEB / "static" / "pipeline.js")],
+                                      capture_output=True, text=True, timeout=30, check=True).stdout)
+    assert out["steps"] == ["Detected", "Graph checked", "Decision", "Your approval", "PayPal"]
+    assert out["c"] == {"detected": 5, "graph": 3, "decided": 3, "approval": 1, "paypal": 1}
+    assert out["empty"] == {"detected": 0, "graph": 0, "decided": 0, "approval": 0, "paypal": 0}
+
+
+def test_pipeline_reads_only_existing_get_routes_and_respects_motion():
+    assert "fetch(`/api/decisions/${encodeURIComponent(d.dispute_id)}`, { cache: \"no-store\" })" in PIPELINE
+    assert "method" not in PIPELINE and "POST" not in PIPELINE
+    assert "pipe.node, cases" in OVERVIEW and "ticker(waiting, heroNext), pipe.node" in OVERVIEW
+    assert '<script src="/static/pipeline.js"></script>' in OVERVIEW_HTML
+    phase = CSS.split("visual moments, phase 3")[1]
+    reduced = phase.split("@media (prefers-reduced-motion: reduce)")[1]
+    assert ".pipeline.is-flowing .pipe-rail::after { animation: none; display: none; }" in reduced
+    assert "overflow: hidden" in phase.split(".pipe-rail {")[1].split("}")[0]  # the light never widens the page
+    assert '"aria-label": "Agent pipeline"' in PIPELINE and 'el("ol", { class: "pipe-steps" }' in PIPELINE
+
+
+def test_every_page_has_the_folder_favicon():
+    svg = (WEB / "static" / "favicon.svg").read_text(encoding="utf-8")
+    assert "#e2b85c" in svg and "<script" not in svg
+    for page in WEB.glob("*.html"):
+        assert '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">' in page.read_text(encoding="utf-8"), page.name
