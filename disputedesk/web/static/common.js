@@ -108,7 +108,8 @@ const DD = (() => {
   // Caption metadata: "PP-R-QQW . due Nov 15" plus the record's source tag.
   function caseCaption(row) {
     const shortId = String(row.dispute_id).split("-").slice(0, 3).join("-");
-    const due = row.seller_response_due_date ? `due ${dueDate(row.seller_response_due_date).split(",")[0]}` : "under PayPal review";
+    const due = row.seller_response_due_date ? `due ${dueDate(row.seller_response_due_date).split(",")[0]}`
+      : row.status === "UNDER_REVIEW" ? "with PayPal" : "no due date";
     return el("span", { class: "cap" }, shortId, el("span", { class: "sep", text: "." }), due,
       el("span", { class: "sep", text: "." }), sourceTag(row.source));
   }
@@ -155,9 +156,9 @@ const DD = (() => {
   };
   const STATUSES = {
     OPEN: ["Open", "waiting"],
-    WAITING_FOR_SELLER_RESPONSE: ["Waiting for your response", "waiting"],
-    WAITING_FOR_BUYER_RESPONSE: ["Waiting for buyer", "review"],
-    UNDER_REVIEW: ["PayPal is reviewing", "review"],
+    WAITING_FOR_SELLER_RESPONSE: ["Waiting on you", "waiting"],
+    WAITING_FOR_BUYER_RESPONSE: ["Waiting on the buyer", "review"],
+    UNDER_REVIEW: ["With PayPal", "review"],
     RESOLVED: ["Resolved", "resolved"],
     OTHER: ["Other", ""],
   };
@@ -165,6 +166,16 @@ const DD = (() => {
   const reasonLabel = (r) => REASONS[r] || words(r);
   const statusLabel = (s) => (STATUSES[s] || [words(s), ""])[0];
   const statusClass = (s) => (STATUSES[s] || ["", ""])[1];
+  // The longer meaning behind each short label, shown as a tooltip on every status badge.
+  const STATUS_HELP = {
+    WAITING_FOR_SELLER_RESPONSE: "PayPal is waiting for your response before the deadline.",
+    UNDER_REVIEW: "Under review by PayPal. Nothing for you to answer for now.",
+    WAITING_FOR_BUYER_RESPONSE: "PayPal is waiting for the buyer's response.",
+    RESOLVED: "PayPal has closed this dispute.",
+  };
+  function statusBadge(status) {
+    return el("span", { class: `badge ${statusClass(status)}`, title: STATUS_HELP[status] || null, text: statusLabel(status) });
+  }
   const stageLabel = (s) => ({ INQUIRY: "Inquiry", CHARGEBACK: "Chargeback", PRE_ARBITRATION: "Pre-arbitration", ARBITRATION: "Arbitration" }[s] || words(s));
 
   function money(amount) {
@@ -220,6 +231,26 @@ const DD = (() => {
   }
   setInterval(tick, 1000);
 
+  // One definition of who a dispute is waiting on, shared by Overview and Queue so their counts match.
+  //   waiting on you  = WAITING_FOR_SELLER_RESPONSE
+  //   with PayPal     = UNDER_REVIEW
+  //   with the buyer  = WAITING_FOR_BUYER_RESPONSE
+  const byDueDate = (a, b) => (Date.parse(a.seller_response_due_date) || Infinity) - (Date.parse(b.seller_response_due_date) || Infinity);
+  function groupDisputes(rows) {
+    const pick = (status) => rows.filter((r) => r.status === status).sort(byDueDate);
+    return { waiting: pick("WAITING_FOR_SELLER_RESPONSE"), withPayPal: pick("UNDER_REVIEW"), withBuyer: pick("WAITING_FOR_BUYER_RESPONSE") };
+  }
+
+  // A dispute's deadline cell: the live countdown, or "With PayPal" while it is under review by PayPal and
+  // there is nothing for the merchant to answer.
+  function deadlineNode(row, withDate = true) {
+    if (row.status === "UNDER_REVIEW" && !row.seller_response_due_date) {
+      return el("span", { class: "countdown with-paypal" }, el("span", { class: "cd-main", text: "With PayPal" }),
+        withDate ? el("span", { class: "sub", text: "Nothing to answer" }) : null);
+    }
+    return countdownNode(row.seller_response_due_date, withDate);
+  }
+
   function countdownNode(dueIso, withDate = true) {
     const c = countdown(dueIso);
     return el("span", { class: `countdown${c.urgent ? " urgent" : ""}`, "data-due": dueIso || "" },
@@ -249,6 +280,6 @@ const DD = (() => {
       el("span", { text: String(score) }), bar);
   }
 
-  return { el, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
+  return { el, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, groupDisputes, deadlineNode, statusBadge, STATUS_HELP, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
            dueDate, sourceTag, decisionChip, riskNode, tick };
 })();

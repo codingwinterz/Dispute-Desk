@@ -25,7 +25,7 @@
       headerName: "Respond within", field: "seller_response_due_date", sort: "asc", minWidth: 170, flex: 1.1,
       // The value is the due date itself (it never changes), so the 1-second ticker in common.js
       // updates the text without making AG Grid flash the cell.
-      cellRenderer: (p) => DD.countdownNode(p.value),
+      cellRenderer: (p) => DD.deadlineNode(p.data),
       comparator: (a, b) => (Date.parse(a) || Infinity) - (Date.parse(b) || Infinity),
       getQuickFilterText: () => "",
     },
@@ -41,7 +41,7 @@
     },
     {
       headerName: "Status", field: "status", minWidth: 200, flex: 1.2, enableCellChangeFlash: true,
-      cellRenderer: (p) => el("span", { class: `badge ${DD.statusClass(p.value)}`, text: DD.statusLabel(p.value) }),
+      cellRenderer: (p) => DD.statusBadge(p.value),
       getQuickFilterText: (p) => p.data.status_label,
     },
     {
@@ -145,22 +145,31 @@
     }
   }
 
+  // Heading and subline count with the same definition as the Overview hero (DD.groupDisputes).
   function updateSummary() {
-    const open = rows.filter((r) => r.status !== "RESOLVED");
-    const next = open.map((r) => r.seller_response_due_date).filter(Boolean).sort()[0];
+    const { waiting, withPayPal, withBuyer } = DD.groupDisputes(rows);
+    const title = document.getElementById("queue-title");
     const summary = document.getElementById("summary");
+    const n = waiting.length;
+    title.textContent = n ? `${n} ${n === 1 ? "dispute" : "disputes"} waiting on you` : "Nothing waiting on you";
     if (!rows.length) {
-      summary.textContent = "Nothing to answer right now.";
+      summary.textContent = "No disputes in the local store yet.";
       return;
     }
-    const pending = rows.filter((r) => !r.decision).length;
-    summary.replaceChildren(
-      `${open.length} open ${open.length === 1 ? "dispute" : "disputes"}. `,
-      next ? "Next response due in " : "",
-      next ? el("span", { class: "num", "data-due": next }, el("span", { class: "cd-main", text: DD.countdown(next).text })) : "",
-      next ? ". " : "",
-      pending ? `${pending} still being analyzed.` : "Every dispute has a recommendation.",
-    );
+    const next = waiting.map((r) => r.seller_response_due_date).filter(Boolean).sort()[0];
+    const pending = waiting.filter((r) => !r.decision || r.decision.status !== "ok").length;
+    const parts = [];
+    if (n) parts.push(`${n} waiting on you. `);
+    if (withPayPal.length) parts.push(`${withPayPal.length} with PayPal. `);
+    if (withBuyer.length) parts.push(`${withBuyer.length} waiting on the buyer. `);
+    if (next) {
+      parts.push("Next response due in ",
+        el("span", { class: "num", "data-due": next }, el("span", { class: "cd-main", text: DD.countdown(next).text })),
+        DD.mode.demo ? `, as of ${DD.recordedLabel().split(",")[0]}. ` : ". ");
+    }
+    if (n) parts.push(pending ? `${pending} still being analyzed.` : "Every waiting dispute has a recommendation.");
+    else if (!withPayPal.length && !withBuyer.length) parts.push("Nothing to answer right now.");
+    summary.replaceChildren(...parts);
   }
 
   async function refresh() {
@@ -171,6 +180,7 @@
       if (!resp.ok) throw new Error(`The server answered HTTP ${resp.status}. Retrying every 5 seconds.`);
       const body = await resp.json();
       rows = (body.disputes || []).map(flat);
+      await DD.modeReady;
       loaded = true;
       DD.live(true);
       banner.hidden = true;

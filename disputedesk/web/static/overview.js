@@ -8,7 +8,6 @@
   DD.renderNav("overview");
 
   const POLL_MS = 5000;
-  const WAITING = "WAITING_FOR_SELLER_RESPONSE";
   const root = document.getElementById("overview");
   const banner = document.getElementById("error");
   let lastKey = "";
@@ -60,7 +59,7 @@
   }
 
   function caption() {
-    const cap = el("span", { class: "cap" }, "Waiting for your response", el("span", { class: "sep", text: "." }));
+    const cap = el("span", { class: "cap" }, "Waiting on you", el("span", { class: "sep", text: "." }));
     if (DD.mode.demo) {
       cap.append(`recorded sandbox data, as of ${DD.recordedLabel()}`);
     } else {
@@ -72,7 +71,7 @@
   function ticker(waiting, next) {
     const decided = waiting.filter((d) => d.decision && d.decision.status === "ok");
     const defend = decided.filter((d) => d.decision.decision === "DEFEND").length;
-    const items = [[el("span", { class: "hl", text: String(waiting.length) }), " waiting"]];
+    const items = [[el("span", { class: "hl", text: String(waiting.length) }), " waiting on you"]];
     const total = amountTotal(waiting);
     if (total) items.push([el("span", { class: "hl", text: total }), " in dispute"]);
     if (next) {
@@ -112,9 +111,10 @@
       el("div", { class: "card-summary" },
         el("span", { text: DD.reasonLabel(d.reason) }),
         el("span", { class: "num", text: DD.money(d.amount) }),
-        el("span", { class: `badge ${DD.statusClass(d.status)}`, text: DD.statusLabel(d.status) })),
-      el("div", { class: "card-due" }, DD.countdownNode(d.seller_response_due_date)));
-    const due = d.seller_response_due_date ? `due ${DD.dueDate(d.seller_response_due_date).split(",")[0]}` : "under PayPal review";
+        DD.statusBadge(d.status)),
+      el("div", { class: "card-due" }, DD.deadlineNode(d)));
+    const due = d.seller_response_due_date ? `due ${DD.dueDate(d.seller_response_due_date).split(",")[0]}`
+      : d.status === "UNDER_REVIEW" ? "with PayPal" : "no due date";
     const label = decided
       ? `${d.dispute_id}: ${d.decision.decision.toLowerCase()}, risk ${d.decision.risk_score}, ${due}`
       : `${d.dispute_id}: no recommendation yet, ${due}`;
@@ -146,15 +146,22 @@
         el("p", { text: "When a buyer opens a dispute in the PayPal sandbox, the poller picks it up within 10 seconds and it appears here." })));
       return;
     }
-    const waiting = rows.filter((d) => d.status === WAITING).sort(byDue);
-    const open = rows.filter(isOpen).sort(byDue);
+    const groups = DD.groupDisputes(rows);  // the same definition the Queue uses
+    const waiting = groups.waiting;
+    // Cards: waiting on you first, then with PayPal, then with the buyer, then anything else unresolved.
+    const grouped = [...groups.waiting, ...groups.withPayPal, ...groups.withBuyer];
+    const open = [...grouped, ...rows.filter((d) => isOpen(d) && !grouped.includes(d)).sort(byDue)];
     heroNext = waiting.find((d) => Number.isFinite(dueMs(d))) || null;
 
     const cases = open.length
       ? el("section", { class: "folders" },
           el("div", { class: "stack-head" },
             el("h2", {}, el("span", { text: "Open" }), el("span", { text: "cases" })),
-            el("span", { class: "cap", text: "Soonest deadline first. Hover or focus a card for the agent's main reason." })),
+            el("span", { class: "cap", text: [
+              `${groups.waiting.length} waiting on you`,
+              groups.withPayPal.length ? `${groups.withPayPal.length} with PayPal` : "",
+              groups.withBuyer.length ? `${groups.withBuyer.length} waiting on the buyer` : "",
+            ].filter(Boolean).join(", ") + ". Hover or focus a card for the agent's main reason." })),
           el("div", { class: "case-cards" }, ...open.map(caseCard)))
       : el("section", { class: "folders" }, el("p", { class: "lede", text: `All ${rows.length} disputes in the local store are resolved.` }));
 
