@@ -60,12 +60,37 @@
     }).flat());
   }
 
-  function countdownLine(next) {
+  // Split-flap: each character of the countdown in a fixed-width flap tile. Tiles flip on first load and,
+  // after that, only where the character changed (static under reduced motion). The line's accessible
+  // name is the real text.
+  function flaps(text, cls, prev) {
+    return el("span", { class: `${cls} flaps`, "aria-hidden": "true" }, ...[...text].map((ch, i) => (ch === " " ? " "
+      : el("span", { class: `flap${prev === null || prev[i] !== ch ? " flip" : ""}`, style: `--fi:${i}`, text: ch }))));
+  }
+
+  function countdownLine(next, prev = null) {
     const c = DD.countdown(next.seller_response_due_date);
-    if (c.text.startsWith("Overdue")) {
-      return line([el("span", { class: "hl urgent" }, "OVERDUE"), chars(c.text.replace("Overdue by ", "").toUpperCase() + ".", "hl urgent")], 2);
+    const overdue = c.text.startsWith("Overdue");
+    const token = (overdue ? c.text.replace("Overdue by ", "") : c.text).toUpperCase();
+    const node = overdue
+      ? line([el("span", { class: "hl urgent", "aria-hidden": "true" }, "OVERDUE"), flaps(token, "hl urgent", prev), el("span", { class: "hl urgent", "aria-hidden": "true" }, ".")], 2)
+      : line([flaps(token, "hl", prev), el("span", { "aria-hidden": "true" }, "LEFT.")], 2);  // red is for overdue only
+    node.dataset.flap = token;
+    node.setAttribute("role", "img");
+    node.setAttribute("aria-label", overdue ? c.text : `${c.text} left`);
+    return node;
+  }
+
+  // Magnet lines: faint segments behind the hero type that turn toward the pointer (decorative).
+  const MAGNET_COLS = 9, MAGNET_ROWS = 4;
+  function magnetField() {
+    const field = el("div", { class: "magnet-field", "aria-hidden": "true" });
+    for (let r = 0; r < MAGNET_ROWS; r++) {
+      for (let c = 0; c < MAGNET_COLS; c++) {
+        field.append(el("span", { class: "magnet", style: `left:${((c + 0.5) / MAGNET_COLS * 100).toFixed(2)}%;top:${((r + 0.5) / MAGNET_ROWS * 100).toFixed(2)}%` }));
+      }
     }
-    return line([chars(c.text.toUpperCase(), "hl"), "LEFT."], 2);  // red is for overdue only
+    return field;
   }
 
   function hero(waiting, next, firstRender) {
@@ -73,7 +98,8 @@
     const board = el("section", { class: `hero-board${firstRender ? " rise" : ""}`, "aria-label": "Disputes waiting for your response" },
       line([el("span", { class: "hl" }, chars(String(n), "")), n === 1 ? "DISPUTE." : "DISPUTES."], 0),
       next ? countdownLine(next) : line(["NOTHING", "DUE."], 2),
-      caption(next));
+      caption(next),
+      magnetField());   // last, so children[1] stays the countdown line
     return board;
   }
 
@@ -142,6 +168,7 @@
       ? `${d.dispute_id}: ${d.decision.decision.toLowerCase()}, risk ${d.decision.risk_score}, ${due}`
       : `${d.dispute_id}: no recommendation yet, ${due}`;
     const card = el("a", { class: `case-card${decided ? " has-reason" : ""}`, href, "aria-label": `${label}.` },
+      el("span", { class: "card-glare", "aria-hidden": "true" }, el("span", { class: "card-glare-disc" })),
       el("h3", { class: "card-id num", text: d.dispute_id }),
       DD.caseCaption(d),
       el("div", { class: "card-stage" }, summary));
@@ -193,7 +220,7 @@
 
     // The hero: stacked type on the left, the case map on the right (below it on narrow screens).
     map = DDMap.create(rows, { compact: wantCompact() });
-    const split = el("div", { class: "hero-split" }, hero(waiting, heroNext, firstRender), map.node);
+    const split = el("div", { class: "hero-split" }, el("div", { class: "hero-glow", "aria-hidden": "true" }), hero(waiting, heroNext, firstRender), map.node);
     pipe = DDPipe.create(rows, firstRender);
     root.replaceChildren(el("h1", { class: "sr-only", text: "Overview" }), split, ticker(waiting, heroNext), pipe.node, cases);
     map.start();
@@ -206,25 +233,65 @@
     if (!heroNext || DD.mode.demo || document.hidden) return;
     const board = root.querySelector(".hero-board");
     const old = board && board.children[1];
-    if (old) old.replaceWith(countdownLine(heroNext));
+    if (!old) return;
+    const fresh = countdownLine(heroNext, old.dataset.flap || "");
+    if (fresh.dataset.flap === old.dataset.flap) return;   // nothing changed: no DOM work, no flips
+    fresh.classList.add("settled");                          // no word-rise on replacement, only flips
+    old.replaceWith(fresh);
+    DDPointer.kick();                                        // one frame re-applies its parallax offset
   }, 1000);
 
   // ---- pointer effects, on the shared DDPointer loop (off on touch, under reduced motion, in hidden tabs) ----
 
-  // Multi-layer hero parallax: one eased pointer position -> CSS variables on the hero container; each
-  // layer (glow pool, two type lines, caption) moves at its own rate, set in app.css.
+  // Multi-layer hero parallax: one eased pointer position moves each layer at its own rate. Transforms
+  // are written straight onto the four layers (never an inherited CSS variable, which would restyle the
+  // whole hero and case map every frame). [selector, x px, y px] at full pointer deflection:
+  const PARALLAX = [[".hero-glow", -26, -16], [".hero-board > .hero-line:nth-child(1)", 8, 8],
+                    [".hero-board > .hero-line:nth-child(2)", 16, 16], [".hero-board > .cap", 24, 14]];
   const par = { x: 0, y: 0 };
   DDPointer.subscribe((dt, p) => {
     const tx = p.inside ? (p.x / p.vw - 0.5) * 2 : 0, ty = p.inside ? (p.y / p.vh - 0.5) * 2 : 0;
     par.x = DDPointer.ease(par.x, tx, dt, 160);
     par.y = DDPointer.ease(par.y, ty, dt, 160);
-    const hero = root.querySelector(".hero-split");
-    if (hero) { hero.style.setProperty("--px", par.x.toFixed(3)); hero.style.setProperty("--py", par.y.toFixed(3)); }
+    for (const [sel, dx, dy] of PARALLAX) {
+      const node = root.querySelector(sel);
+      if (node) node.style.transform = `translate3d(${(par.x * dx).toFixed(2)}px, ${(par.y * dy).toFixed(2)}px, 0)`;
+    }
     return !(DDPointer.settled(par.x, tx, 0.002) && DDPointer.settled(par.y, ty, 0.002));
   }, () => {
-    const hero = root.querySelector(".hero-split");
-    if (hero) { hero.style.removeProperty("--px"); hero.style.removeProperty("--py"); }
+    for (const [sel] of PARALLAX) { const node = root.querySelector(sel); if (node) node.style.removeProperty("transform"); }
   });
+
+  // Magnet lines turn toward the pointer; at rest (and under reduced motion or on touch) they lie still.
+  const MAGNET_REST = -22;   // degrees
+  const magnets = { field: null, lines: [], centres: [], angles: [], dirty: true };
+  window.addEventListener("scroll", () => { magnets.dirty = true; }, { passive: true });
+  window.addEventListener("resize", () => { magnets.dirty = true; }, { passive: true });
+  DDPointer.subscribe((dt, p) => {
+    const field = root.querySelector(".magnet-field");
+    if (!field) return false;
+    if (field !== magnets.field) {
+      magnets.field = field; magnets.lines = [...field.children]; magnets.angles = magnets.lines.map(() => MAGNET_REST); magnets.dirty = true;
+    }
+    if (magnets.dirty) {   // read layout here, in the loop, never in a pointer handler
+      const r = field.getBoundingClientRect();
+      magnets.centres = magnets.lines.map((_, i) => ({ x: r.left + ((i % MAGNET_COLS) + 0.5) / MAGNET_COLS * r.width,
+                                                       y: r.top + (Math.floor(i / MAGNET_COLS) + 0.5) / MAGNET_ROWS * r.height }));
+      magnets.dirty = false;
+    }
+    let busy = false;
+    magnets.lines.forEach((line, i) => {
+      const c = magnets.centres[i];
+      const target = p.inside ? (Math.atan2(p.y - c.y, p.x - c.x) * 180) / Math.PI : MAGNET_REST;
+      const cur = magnets.angles[i];
+      const delta = ((target - cur + 540) % 360) - 180;   // shortest way round
+      const next = DDPointer.ease(cur, cur + delta, dt, 140);
+      magnets.angles[i] = next;
+      line.style.transform = `rotate(${next.toFixed(1)}deg)`;
+      if (Math.abs(delta) > 0.3) busy = true;
+    });
+    return busy;
+  }, () => { magnets.lines.forEach((l) => l.style.removeProperty("transform")); magnets.angles = magnets.lines.map(() => MAGNET_REST); });
 
   // Tilt and glare on the case cards: up to MAX_TILT degrees toward the pointer, with a soft blue glare
   // that follows it. Pointer events only pick the active card; the loop reads its size once per
@@ -261,26 +328,29 @@
       const trx = -ny * MAX_TILT, try_ = nx * MAX_TILT, tg = active ? 1 : 0;
       st.rx = DDPointer.ease(st.rx, trx, dt, 110);
       st.ry = DDPointer.ease(st.ry, try_, dt, 110);
-      st.gx = DDPointer.ease(st.gx, (nx + 1) * 50, dt, 90);
+      st.gx = DDPointer.ease(st.gx, (nx + 1) * 50, dt, 90);   // percent across the card
       st.gy = DDPointer.ease(st.gy, (ny + 1) * 50, dt, 90);
       st.g = DDPointer.ease(st.g, tg, dt, 160);
       const resting = !active && Math.abs(st.rx) < 0.02 && Math.abs(st.ry) < 0.02 && st.g < 0.005;
       if (resting) {
         card.style.removeProperty("transform");
-        card.style.removeProperty("--glare-on");
+        if (st.disc) st.disc.style.opacity = "0";
         cards.delete(card);
         continue;
       }
       card.style.transform = `perspective(900px) rotateX(${st.rx.toFixed(2)}deg) rotateY(${st.ry.toFixed(2)}deg)`;
-      card.style.setProperty("--gx", `${st.gx.toFixed(1)}%`);
-      card.style.setProperty("--gy", `${st.gy.toFixed(1)}%`);
-      card.style.setProperty("--glare-on", st.g.toFixed(3));
+      // The glare disc moves by transform and fades by opacity: nothing the card's children inherit.
+      st.disc = st.disc || card.querySelector(".card-glare-disc");
+      if (st.disc && st.box) {
+        st.disc.style.transform = `translate3d(${(st.gx / 100 * st.box.hw * 2).toFixed(1)}px, ${(st.gy / 100 * st.box.hh * 2).toFixed(1)}px, 0)`;
+        st.disc.style.opacity = st.g.toFixed(3);
+      }
       if (!(DDPointer.settled(st.rx, trx, 0.02) && DDPointer.settled(st.ry, try_, 0.02) && DDPointer.settled(st.g, tg, 0.004)
             && DDPointer.settled(st.gx, (nx + 1) * 50, 0.2) && DDPointer.settled(st.gy, (ny + 1) * 50, 0.2))) busy = true;
     }
     return busy;
   }, () => {
-    for (const card of cards.keys()) { card.style.removeProperty("transform"); card.style.removeProperty("--glare-on"); }
+    for (const [card, st] of cards) { card.style.removeProperty("transform"); if (st.disc) st.disc.style.opacity = "0"; }
     cards.clear();
   });
 

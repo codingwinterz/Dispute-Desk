@@ -192,7 +192,7 @@ def _lit_backgrounds():
     grounds = {"ground lift": lifted, "ground lift + light grain": over(lifted, "#ffffff", grain),
                "ground lift + dark grain": over(lifted, "#000000", grain)}
     out = dict(grounds)
-    lights = {"hero glow": (".hero-split::before", "glow-hero"), "soft hero glow": (".hero-split::before", "glow-hero-soft"),
+    lights = {"hero glow": (".hero-glow", "glow-hero"), "soft hero glow": (".hero-glow", "glow-hero-soft"),
               "cursor spotlight": (".spotlight", "glow-spotlight"),
               "page hero glow": (".page-hero::before", "glow-page-hero")}
     for name, (selector, token) in lights.items():
@@ -260,7 +260,7 @@ def test_pointer_effects_are_off_on_touch_reduced_motion_and_hidden_tabs():
     assert "document.hidden" in POINTER and "visibilitychange" in POINTER
     phase = CSS.split("palette pass, phase 3")[1]
     assert "@media (prefers-reduced-motion: reduce), (hover: none), (pointer: coarse)" in phase
-    assert ".spotlight, .case-card::before { display: none; }" in phase
+    assert ".spotlight, .card-glare { display: none; }" in phase
 
 
 def test_tilt_is_at_most_7_degrees_and_effects_stay_off_grid_rows_and_the_dialog():
@@ -287,14 +287,16 @@ CASEMAP = (WEB / "static" / "casemap.js").read_text(encoding="utf-8")
 
 
 def test_hero_parallax_has_layers_moving_at_different_rates():
+    table = OVERVIEW.split("const PARALLAX = [", 1)[1].split("];", 1)[0]
+    rates = [int(x) for x in re.findall(r'"\s*,\s*(-?\d+)\s*,', table)]
+    assert len(rates) >= 4 and len(set(rates)) == len(rates)  # every layer moves at its own rate
+    assert any(r < 0 for r in rates)  # the glow drifts against the pointer
+    sub = OVERVIEW.split("const PARALLAX = [", 1)[1].split("// Magnet lines turn", 1)[0]
+    assert "node.style.transform = `translate3d(" in sub and "setProperty(\"--px\"" not in OVERVIEW  # no inherited variables
+    assert "transition: transform 0.25s" not in CSS
     phase = CSS.split("palette pass, phase 4")[1]
-    rates = re.findall(r"calc\(var\(--px, 0\) \* (-?\d+)px\)", phase)
-    depths = re.findall(r"\.hero-line:nth-child\(\d\) \{ --depth: (\d+)px; \}", phase)
-    assert sorted(set(map(int, rates + depths))) == sorted(map(int, rates + depths))  # every layer differs
-    assert len(rates + depths) >= 4 and any(int(r) < 0 for r in rates)  # the glow drifts against the pointer
-    assert 'hero.style.setProperty("--px"' in OVERVIEW and "transition: transform 0.25s" not in CSS
     reduced = phase.split("@media (prefers-reduced-motion: reduce)")[1]
-    assert ".hero-board .cap, .hero-split::before { transform: none !important; }" in reduced
+    assert ".hero-board .cap, .hero-glow { transform: none !important; }" in reduced
 
 
 def test_map_camera_follows_the_pointer_on_the_shared_loop_and_is_released():

@@ -315,6 +315,44 @@
     dialog.showModal();
   }
 
+  // Annotated citations: a hand-drawn underline under each fact the decision cites. Decorative (the
+  // "cited" state is also in the row's highlight and text); it draws in once when it scrolls into view,
+  // and is simply drawn under reduced motion.
+  const SVGNS = "http://www.w3.org/2000/svg";
+  function annotated(text, seed) {
+    const wob = (k) => (((seed * 37 + k * 11) % 7) - 3) * 0.55;   // a little different under every fact
+    const d = `M1 ${5 + wob(1)} C 18 ${3 + wob(2)}, 34 ${7 + wob(3)}, 50 ${4.5 + wob(4)} S 82 ${3 + wob(5)}, 99 ${5.5 + wob(6)}`;
+    const svg = document.createElementNS(SVGNS, "svg");
+    svg.setAttribute("class", "annot-line");
+    svg.setAttribute("viewBox", "0 0 100 10");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const path = document.createElementNS(SVGNS, "path");
+    path.setAttribute("d", d);
+    path.setAttribute("pathLength", "1");
+    svg.append(path);
+    return el("span", { class: "annot" }, el("span", { class: "annot-text", text }), svg);
+  }
+  const drawnOnce = new Set();   // fact texts already drawn on this page: re-renders show them drawn
+  function drawAnnotations(list) {
+    const items = [...list.querySelectorAll(".annot")];
+    if (DD.reducedMotion() || !("IntersectionObserver" in window)) { items.forEach((a) => a.classList.add("drawn", "instant")); return; }
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        e.target.classList.add("drawn");
+        drawnOnce.add(e.target.textContent);
+        io.unobserve(e.target);
+      }
+    }, { rootMargin: "0px 0px -10% 0px" });
+    items.forEach((a, i) => {
+      a.style.setProperty("--ai", String(i));
+      if (drawnOnce.has(a.textContent)) a.classList.add("drawn", "instant");
+      else io.observe(a);
+    });
+  }
+
   function citeTitle(rec, id) {
     const f = (rec.facts || []).find((x) => x.id === id);
     if (f) return f.text;
@@ -414,11 +452,12 @@
         linked.length > 6 ? el("span", { text: `${linked.length - 6} more linked disputes are in the flat diagram and the fact list.` }) : null);
     }
 
-    const facts = el("ul", { class: "fact-list" }, ...(rec.facts || []).map((f) => {
+    const facts = el("ul", { class: "fact-list" }, ...(rec.facts || []).map((f, i) => {
       const cited = rec.reasoning.some((p) => p.cites.includes(f.id));
       return el("li", { id: `fact-${f.id}`, class: cited ? "cited" : null },
-        el("span", { class: "fid", text: f.id }), el("span", { text: f.text }), DD.sourceTag(f.source));
+        el("span", { class: "fid", text: f.id }), cited ? annotated(f.text, i) : el("span", { text: f.text }), DD.sourceTag(f.source));
     }));
+    drawAnnotations(facts);
 
     return [
       el("section", { class: "panel" },

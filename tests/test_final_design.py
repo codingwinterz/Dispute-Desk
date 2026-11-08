@@ -209,3 +209,62 @@ def test_phase3_colours_stay_in_budget_and_pass_contrast():
                             ("control-edge", "surface", 3.5), ("primary", "ground", 3.5), ("primary", "surface", 3.5),
                             ("danger", "surface", 3.5)]:
         assert ratio(TOKENS[fg], TOKENS[bg]) >= minimum, (fg, bg)
+
+
+# --- phase 4: policies, split-flap, magnet lines, annotated citations ------------------------------
+
+POLICIES = (STATIC / "policies.js").read_text(encoding="utf-8")
+OVERVIEW = (STATIC / "overview.js").read_text(encoding="utf-8")
+CASE = (STATIC / "case.js").read_text(encoding="utf-8")
+PHASE4 = section("final design pass, phase 4")
+
+
+def test_policies_count_citations_from_stored_decisions_read_only():
+    load = POLICIES.split("async function loadCitations()", 1)[1].split("function citationLine(", 1)[0]
+    assert 'fetch("/api/disputes", { cache: "no-store" })' in load and "fetch(`/api/decisions/${encodeURIComponent(d.dispute_id)}`" in load
+    assert "method" not in load and 'rec.status !== "ok"' in load and "(rec.reasoning || []).flatMap((p) => p.cites || [])" in load
+    assert "Not cited in any stored decision yet." in POLICIES  # a real empty state
+    # Save and the demo-disabled behaviour are unchanged
+    assert 'send("PUT", "/api/policies", current())' in POLICIES
+    assert "button.disabled = true;\n        button.textContent = DD.DEMO_LABEL;" in POLICIES
+    assert ".switch .track::after { transition: transform 0.28s" in PHASE4  # animated switch
+
+
+def test_split_flap_flips_only_on_load_and_on_change_with_a_real_label():
+    flaps = OVERVIEW.split("function flaps(text, cls, prev)", 1)[1].split("function countdownLine(", 1)[0]
+    assert 'prev === null || prev[i] !== ch ? " flip" : ""' in flaps  # all on load, then only changed tiles
+    line = OVERVIEW.split("function countdownLine(next, prev = null)", 1)[1].split("// Magnet lines", 1)[0]
+    assert 'node.setAttribute("aria-label", overdue ? c.text : `${c.text} left`)' in line
+    assert "DD.countdown(next.seller_response_due_date)" in line  # DD.clock(): frozen in demo mode
+    assert "if (fresh.dataset.flap === old.dataset.flap) return;" in OVERVIEW  # no DOM work when nothing changed
+    assert ".flap {" in PHASE4 and "width: 0.62em" in PHASE4  # fixed-width cells
+    reduced = PHASE4.split("@media (prefers-reduced-motion: reduce)")[1]
+    assert ".flap.flip { animation: none; }" in reduced
+
+
+def test_magnet_lines_turn_on_the_shared_loop_in_blue_tints_without_layout_reads_in_handlers():
+    sub = OVERVIEW.split("// Magnet lines turn toward the pointer", 1)[1].split("// Tilt and glare", 1)[0]
+    assert "DDPointer.subscribe(" in sub and "Math.atan2(p.y - c.y, p.x - c.x)" in sub and "DDPointer.ease(" in sub
+    assert "getBoundingClientRect" in sub.split("if (magnets.dirty)", 1)[1].split("}", 1)[0]  # read in the loop
+    for handler in re.findall(r'addEventListener\("(?:scroll|resize)", \(\) => \{([^}]*)\}', sub):
+        assert "getBoundingClientRect" not in handler
+    magnet = re.search(r"\.magnet \{([^}]*)\}", PHASE4).group(1)
+    assert "var(--primary) 22%, var(--ground)" in magnet and "--splash" not in PHASE4
+    assert '"aria-hidden": "true"' in OVERVIEW.split("function magnetField()", 1)[1][:200]
+
+
+def test_text_on_top_of_a_magnet_line_still_passes():
+    def mix(a, b, t):
+        return "#" + "".join(f"{round(int(a[i:i + 2], 16) * (1 - t) + int(b[i:i + 2], 16) * t):02x}" for i in (1, 3, 5))
+    line = mix(TOKENS["ground"], TOKENS["primary"], 0.22)
+    for text in ("text", "muted", "splash", "danger", "primary-text"):  # everything the hero board can show
+        assert ratio(TOKENS[text], line) >= 4.5, text
+
+
+def test_annotated_citations_underline_only_cited_facts_and_draw_once():
+    facts = CASE.split('const facts = el("ul", { class: "fact-list" }', 1)[1].split("return [", 1)[0]
+    assert "cited ? annotated(f.text, i) : el(\"span\", { text: f.text })" in facts and "drawAnnotations(facts);" in facts
+    draw = CASE.split("function drawAnnotations(list)", 1)[1].split("function citeTitle(", 1)[0]
+    assert "io.unobserve(e.target);" in draw and "DD.reducedMotion()" in draw and "drawnOnce" in draw
+    assert 'path.setAttribute("pathLength", "1");' in CASE and '"aria-hidden", "true"' in CASE.split("function annotated(", 1)[1][:900]
+    assert "stroke: var(--primary-text)" in PHASE4  # blue, not tangerine

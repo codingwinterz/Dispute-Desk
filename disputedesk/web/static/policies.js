@@ -31,6 +31,51 @@
 
   let saved = null;      // settings as last loaded or saved
   let previewTimer = 0;
+  let citations = null;  // rule ID -> disputes whose stored decision cites it (null until loaded)
+
+  // "Cited in N decisions": counted from the stored decisions through the existing read-only routes
+  // (GET /api/disputes, then GET /api/decisions/{id}, as the Activity page does). Read only.
+  async function loadCitations() {
+    const resp = await fetch("/api/disputes", { cache: "no-store" });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const disputes = (await resp.json()).disputes || [];
+    const bodies = await Promise.all(disputes.slice(0, 60).map((d) =>
+      fetch(`/api/decisions/${encodeURIComponent(d.dispute_id)}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null)));
+    const byRule = Object.fromEntries(RULES.map((r) => [r.id, []]));
+    let decisions = 0;
+    for (const body of bodies) {
+      const rec = body && body.decision;
+      if (!rec || rec.status !== "ok") continue;
+      decisions += 1;
+      const cited = new Set((rec.reasoning || []).flatMap((p) => p.cites || []));
+      for (const r of RULES) if (cited.has(r.id)) byRule[r.id].push(body.dispute.dispute_id);
+    }
+    return { byRule, decisions };
+  }
+
+  function citationLine(ruleId) {
+    if (!citations) return el("p", { class: "cited-line is-loading", text: "Counting citations in stored decisions." });
+    const ids = citations.byRule[ruleId] || [];
+    if (!ids.length) return el("p", { class: "cited-line is-zero", text: "Not cited in any stored decision yet." });
+    return el("p", { class: "cited-line" },
+      el("span", { class: "cited-count num", text: String(ids.length) }),
+      ` ${ids.length === 1 ? "decision cites" : "decisions cite"} this rule: `,
+      ...ids.flatMap((id, i) => [i ? ", " : "", el("a", { class: "num", href: `/case/${encodeURIComponent(id)}`, text: id.split("-").slice(0, 3).join("-") })]));
+  }
+
+  function showCitations() {
+    for (const r of RULES) {
+      const slot = form.querySelector(`[data-rule="${r.id}"] .cited-slot`);
+      if (slot) slot.replaceChildren(citationLine(r.id));
+    }
+    const on = RULES.filter((r) => form.elements[r.toggle] && form.elements[r.toggle].checked).length;
+    const chips = [DD.statChip({ label: "rules", value: String(RULES.length) }), DD.statChip({ label: "switched on", value: String(on) })];
+    if (citations) {
+      chips.push(DD.statChip({ label: "stored decisions", value: String(citations.decisions) }));
+      chips.push(DD.statChip({ label: "rule citations", value: String(Object.values(citations.byRule).reduce((s, a) => s + a.length, 0)) }));
+    }
+    document.getElementById("policies-stats").replaceChildren(...chips);
+  }
 
   function input(name, value, attrs) {
     const { prefix, ...rest } = attrs;
@@ -68,6 +113,7 @@
           el("label", { class: "policy-title", for: `t-${r.id}`, text: r.title }),
           el("span", { class: "rule-id", text: r.id })),
         el("p", { class: "policy-body" }, ...r.body(s)),
+        el("div", { class: "cited-slot" }),
         el("div", { class: "agent-reads" },
           el("span", { class: "cap", text: "The agent reads" }),
           el("blockquote", { id: `rule-${r.id}` })));
@@ -82,6 +128,7 @@
     showRules(body.rules);
     setStatus(body.updated_at ? `Last saved ${new Date(body.updated_at).toLocaleString()}.` : "Using the default policies. Nothing saved yet.");
     syncDisabled();
+    showCitations();
   }
 
   function showRules(rules) {
@@ -119,6 +166,7 @@
 
   function onChange() {
     syncDisabled();
+    showCitations();
     if (dirty()) setStatus("Unsaved changes.");
     clearTimeout(previewTimer);
     previewTimer = setTimeout(async () => {
@@ -157,7 +205,10 @@
       DD.live(true);
       await DD.modeReady;
       saved = body.settings;
+      document.getElementById("policies-eyebrow").replaceChildren(...DD.eyebrow("Policies"));
       render(body);
+      loadCitations().then((c) => { citations = c; showCitations(); })
+        .catch(() => { citations = { byRule: {}, decisions: 0, failed: true }; showCitations(); });
       if (DD.mode.demo) {
         const button = document.getElementById("save");
         button.disabled = true;
