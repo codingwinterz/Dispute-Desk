@@ -2,6 +2,7 @@
 
     python scripts/seed_graph.py            (idempotent: MERGE only)
     python scripts/seed_graph.py --reset    (drop the disputedesk graph first)
+    python scripts/seed_graph.py --file my_store_export.json   (any file shaped like seed/merchant_data.json)
 
 Reads disputes from data/disputedesk.db (filled by the poller). Makes no PayPal or LLM calls.
 """
@@ -21,6 +22,7 @@ from disputedesk.seed import load_seed, seed_graph  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--reset", action="store_true", help="delete the disputedesk graph before seeding")
+    parser.add_argument("--file", type=Path, default=None, help="input JSON (default seed/merchant_data.json)")
     args = parser.parse_args()
 
     settings = load_agent_settings()
@@ -30,7 +32,7 @@ def main() -> int:
         if args.reset:
             graph.reset()
             print("graph reset")
-        for line in seed_graph(graph, store.full_disputes(), load_seed()):
+        for line in seed_graph(graph, store.full_disputes(), load_seed(args.file) if args.file else load_seed()):
             print(line)
     except Exception as exc:  # the client raises redis.exceptions.*, not the builtin ConnectionError
         print(f"FAIL: FalkorDB at {settings.falkordb_host}:{settings.falkordb_port}: {type(exc).__name__}")
