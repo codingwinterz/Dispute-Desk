@@ -522,3 +522,11 @@ button.secondary.small { font-size: 13px; padding: 6px 10px; }
   .event-time { grid-column: 2; }
   .event-body { grid-column: 2; }
 }
+
+/* ---- demo mode ---------------------------------------------------------------------- */
+
+.demo-badge {
+  font-size: 12px; font-weight: 700; padding: 5px 9px; border-radius: 999px;
+  color: var(--accent-ink); background: var(--accent);
+  box-shadow: 0 0 12px -3px rgba(226, 184, 92, 0.6);
+}

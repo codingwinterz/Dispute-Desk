@@ -12,6 +12,9 @@ worker thread, and sweeps stored disputes without a decision at startup.
 import asyncio
 import json
 import logging
+import os
+import shutil
+import tempfile
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -30,6 +33,7 @@ from disputedesk.auth import TokenProvider
 from disputedesk.config import DISPUTE_DB, LOG_DIR, Settings, load_agent_settings, load_settings
 from disputedesk.decision import SANDBOX_NOTE
 from disputedesk.decision_store import DecisionStore
+from disputedesk.demo import DEMO_MESSAGE, SNAPSHOT_PATH, load_snapshot, read_snapshot
 from disputedesk.dispute_store import DisputeStore, safe_filename
 from disputedesk.drafts import DraftError, DraftStore, effective_draft
 from disputedesk.disputes import DisputesClient
@@ -91,6 +95,13 @@ class PayPalSignatureVerifier:
         return resp.json().get("verification_status") == "SUCCESS"
 
 
+class _DemoVerifier:
+    """Placeholder in demo mode: webhooks are refused before any verification would happen."""
+
+    def verify(self, headers: dict[str, str], event: dict[str, Any]) -> bool:
+        raise VerificationUnavailable("demo mode")
+
+
 class EventStore:
     """Deduplicates by event id and keeps the raw body of each new event in logs/events/."""
 
@@ -139,9 +150,34 @@ def create_app(
     policy_store: PolicyStore | None = None,
     draft_store: DraftStore | None = None,
     submitter: Submitter | None = None,
+    demo: bool | None = None,
 ) -> FastAPI:
     """Build the app. With no verifier, settings come from the environment and the real
-    poller is started; tests inject their own pieces and get no poller unless they pass one."""
+    poller is started; tests inject their own pieces and get no poller unless they pass one.
+
+    Demo mode (demo=True or DEMO_MODE=1) serves data/demo_snapshot.json from a temporary SQLite file
+    through the same stores and routes. It never loads .env settings, so no PayPal client, token,
+    poller, analyzer, FalkorDB connection or LLM is ever created, and every write is refused."""
+    if demo is None:
+        demo = os.getenv("DEMO_MODE") == "1"
+    demo_info: dict[str, Any] = {"demo": False}
+    demo_dir: Path | None = None
+    demo_stores: list[Any] = []  # closed at shutdown before the temporary folder is removed
+    if demo:
+        snapshot = read_snapshot(Path(os.getenv("DEMO_SNAPSHOT") or SNAPSHOT_PATH))
+        demo_dir = Path(tempfile.mkdtemp(prefix="disputedesk-demo-"))
+        dispute_store = DisputeStore(demo_dir / "demo.db")
+        decision_store = DecisionStore(dispute_store.path)
+        policy_store = PolicyStore(dispute_store.path)
+        draft_store = DraftStore(dispute_store.path)
+        submissions = SubmissionStore(dispute_store.path)  # creates its tables before loading
+        load_snapshot(snapshot, dispute_store.path)
+        demo_stores = [dispute_store, decision_store, policy_store, draft_store, submissions]
+        submitter = Submitter(dispute_store, decision_store, draft_store, submissions, client=None)
+        store = EventStore(demo_dir / "logs")
+        verifier = verifier or _DemoVerifier()  # never called: the middleware refuses every write
+        demo_info = {"demo": True, "recorded_at": snapshot.get("recorded_at"), "message": DEMO_MESSAGE}
+        log.info("demo mode: %d disputes from the snapshot; no PayPal, LLM or graph access", len(snapshot["disputes"]))
     settings: Settings | None = None
     if verifier is None:
         settings = load_settings()
@@ -189,6 +225,10 @@ def create_app(
                 await task
             if analyzer:
                 await run_in_threadpool(analyzer.stop)
+            if demo_dir is not None:
+                for s_ in demo_stores:
+                    s_.close()
+                shutil.rmtree(demo_dir, ignore_errors=True)
 
     app = FastAPI(title="DisputeDesk", lifespan=lifespan)
     app.state.bus = bus
@@ -203,6 +243,10 @@ def create_app(
         # UNVERIFIED for non-default ngrok configs; put real auth here before any wider exposure.
         if request.url.path != WEBHOOK_PATH and "x-forwarded-for" in request.headers:
             return JSONResponse({"error": "local access only"}, status_code=403)
+        # Demo mode is read-only: every write (submissions, drafts, policies, webhook) is refused.
+        # The policy preview only computes rule text and writes nothing.
+        if demo and request.method not in ("GET", "HEAD") and request.url.path != "/api/policies/preview":
+            return JSONResponse({"error": "demo_mode", "message": DEMO_MESSAGE}, status_code=403)
         response = await call_next(request)
         # Dashboard pages and assets: always revalidate, so a browser never runs a stale page against
         # a newer server (FileResponse/StaticFiles send Last-Modified but no Cache-Control).
@@ -229,6 +273,11 @@ def create_app(
         return FileResponse(WEB_DIR / "case.html")
 
     # --- read-only API (local store only; no PayPal calls) -----------------------
+
+    @app.get("/api/mode")
+    async def app_mode() -> JSONResponse:
+        """Whether this server is in demo mode (serving recorded sandbox data)."""
+        return JSONResponse(demo_info)
 
     def _queue_rows() -> list[dict[str, Any]]:
         briefs = decision_store.briefs()

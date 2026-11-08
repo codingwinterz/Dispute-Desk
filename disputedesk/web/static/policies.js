@@ -155,8 +155,15 @@
       if (!resp.ok) throw new Error(`The server answered HTTP ${resp.status}. Reload to try again.`);
       const body = await resp.json();
       DD.live(true);
+      await DD.modeReady;
       saved = body.settings;
       render(body);
+      if (DD.mode.demo) {
+        const button = document.getElementById("save");
+        button.disabled = true;
+        button.textContent = DD.DEMO_LABEL;
+        setStatus("Recorded sandbox data: you can try the switches and see the rule text change, but nothing is saved.");
+      }
     } catch (err) {
       DD.live(false);
       document.getElementById("loading").textContent = err instanceof TypeError

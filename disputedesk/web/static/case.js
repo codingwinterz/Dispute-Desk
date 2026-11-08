@@ -111,7 +111,8 @@
     text.value = original;
     const count = el("span", { class: "hint num", id: "draft-count" });
     const status = el("p", { class: "hint", id: "draft-status", "aria-live": "polite" });
-    const save = el("button", { class: "primary", type: "button", text: "Save draft" });
+    const save = el("button", { class: "primary", type: "button", disabled: DD.mode.demo,
+                                text: DD.mode.demo ? DD.DEMO_LABEL : "Save draft" });
     const restore = el("button", { class: "secondary", type: "button", text: "Use the agent's draft" });
     const fix = el("button", { class: "secondary", type: "button", hidden: true, text: "Add the note back" });
     let sandboxNote = "";
@@ -214,10 +215,11 @@
 
   function approvePanel(d, submit) {
     if (!submit || !submit.action) return null;
-    const reasons = submit.reasons || [];
-    const approve = el("button", { class: "primary", type: "button", disabled: !submit.can_submit,
-                                   "aria-describedby": "approve-reasons", text: submit.label });
-    approve.addEventListener("click", () => openConfirm(d, submit));
+    const demo = DD.mode.demo;
+    const reasons = demo ? ["This is recorded sandbox data, so nothing can be sent to PayPal from here. The dry run still shows the exact request an approval would send."] : (submit.reasons || []);
+    const approve = el("button", { class: "primary", type: "button", disabled: demo || !submit.can_submit,
+                                   "aria-describedby": "approve-reasons", text: demo ? DD.DEMO_LABEL : submit.label });
+    if (!demo) approve.addEventListener("click", () => openConfirm(d, submit));
     const dryButton = el("button", { class: "secondary", type: "button", text: "Show the exact request (dry run)" });
     const dryOut = el("div", { class: "dry-run", hidden: true, "aria-live": "polite" });
     dryButton.addEventListener("click", async () => {
@@ -467,6 +469,7 @@
         ? "Can't reach the DisputeDesk server. Is uvicorn still running? Retrying every 5 seconds." : err.message));
       return;
     }
+    await DD.modeReady;
     const key = JSON.stringify(body);
     if (key === lastKey) return; // nothing changed; keep scroll position and any open anchor
     if (editorDirty || dialogOpen) return;  // never replace unsaved edits or an open confirm dialog

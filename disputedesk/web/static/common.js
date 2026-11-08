@@ -42,7 +42,23 @@ const DD = (() => {
         el("span", { class: "env", title: "Every call goes to api-m.sandbox.paypal.com; there are no live credentials.", text: "PayPal sandbox" })));
     document.body.classList.add("shell");
     document.body.prepend(sidebar, topbar);
+    modeReady.then((m) => {
+      if (!m.demo) return;
+      const recorded = m.recorded_at ? new Date(m.recorded_at).toLocaleString() : "an earlier session";
+      topbar.querySelector(".topbar-status").prepend(el("span", { class: "demo-badge", title: `Recorded sandbox data from ${recorded}. Nothing is sent to PayPal.`, text: "Demo data" }));
+      document.body.classList.add("is-demo");
+    });
   }
+
+  // Demo mode (GET /api/mode): pages await this before drawing write controls, so a button never
+  // flashes enabled before the mode is known. Any failure is treated as normal (non-demo) mode;
+  // the server refuses writes in demo mode regardless.
+  const DEMO_LABEL = "Demo mode: recorded sandbox data";
+  const modeReady = fetch("/api/mode", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : { demo: false }))
+    .catch(() => ({ demo: false }));
+  const mode = { demo: false };
+  modeReady.then((m) => { mode.demo = Boolean(m.demo); mode.recorded_at = m.recorded_at; });
 
   // Live indicator: pages report each request to the local server. "Live" (pulsing) only while the
   // last request succeeded; "Offline" (red, still) after a failure. Shows how long ago it last answered.
@@ -161,6 +177,6 @@ const DD = (() => {
       el("span", { text: String(score) }), bar);
   }
 
-  return { el, renderNav, live, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
+  return { el, renderNav, live, mode, modeReady, DEMO_LABEL, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
            dueDate, sourceTag, decisionChip, riskNode, tick };
 })();
