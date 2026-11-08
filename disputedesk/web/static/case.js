@@ -84,7 +84,9 @@
           DD.decisionChip(rec),
           el("span", { class: "score", title: "Likelihood, 0 to 100, that the buyer's claim is valid (you would lose if you defended), based only on the evidence on file" },
             el("strong", { text: String(rec.risk_score) }), "risk score"),
-          el("span", { class: "meta", text: `Analyzed ${new Date(rec.created_at).toLocaleString()} by ${rec.model}` }))),
+          el("span", { class: "meta", text: `Analyzed ${new Date(rec.created_at).toLocaleString()} by ${rec.model}` })),
+        rec.reasoning && rec.reasoning[0] ? el("p", { class: "main-reason" },
+          el("span", { class: "main-reason-label", text: "Main reason" }), rec.reasoning[0].point) : null),
       el("section", { class: "panel" }, el("h2", { text: "Why" }), reasons, rulesBlock),
       // An accept sends the fixed note shown in the approval panel, so the evidence draft only
       // matters for a defence.
@@ -426,6 +428,26 @@
 
   // ---- render loop -------------------------------------------------------------------
 
+  // ---- per-case timeline (stored timestamps only) ------------------------------------------
+
+  function caseTimeline(d, rec, draft, submit) {
+    const sub = submit && submit.submission;
+    const steps = [
+      [d.detected_at, `Detected through the ${d.detected_via === "webhook" ? "PayPal webhook" : "dispute poller"}`, ""],
+      [rec && rec.created_at, rec ? (rec.status === "ok" ? "Analyzed by the agent" : "Analysis failed") : "", rec && rec.status !== "ok" ? "failed" : ""],
+      [draft && draft.edited ? draft.updated_at : null, "Draft edited and saved", ""],
+      [sub && sub.started_at, "Approved and sent", ""],
+      [sub && sub.finished_at, sub ? { succeeded: `PayPal accepted it (HTTP ${sub.http_status})`, rejected: `PayPal refused it (HTTP ${sub.http_status})`, unknown: "Outcome unknown" }[sub.state] || "" : "",
+       sub ? (sub.state === "succeeded" ? "done" : sub.state === "sending" ? "" : "failed") : ""],
+    ].filter(([at, label]) => at && label).sort((a, b) => Date.parse(a[0]) - Date.parse(b[0]));
+    return el("section", { class: "panel case-timeline", "aria-labelledby": "timeline-title" },
+      el("h2", { id: "timeline-title", text: "Timeline" }),
+      el("ol", {}, ...steps.map(([at, label, kind]) => el("li", { class: kind || null },
+        el("span", { class: "tl-dot", "aria-hidden": "true" }),
+        el("span", { class: "tl-label", text: label }),
+        el("time", { class: "tl-time num", datetime: at, text: new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) })))));
+  }
+
   function disposeGraph() {
     if (graph3d) { graph3d.dispose(); graph3d = null; }
   }
@@ -475,12 +497,16 @@
     if (editorDirty || dialogOpen) return;  // never replace unsaved edits or an open confirm dialog
     lastKey = key;
     const { dispute, decision, draft, submit } = body;
-    const left = el("div", {}, ...decisionPanels(dispute, decision, draft, submit));
-    const right = el("div", {}, ...((decision && decision.status === "ok" && graphPanel(decision)) || [
+    // Hierarchy: 1) decision and risk (full width, with the timeline), 2) reasons beside the evidence
+    // path, 3) draft and approval. Same panels as before; only their placement changes.
+    const panels = decisionPanels(dispute, decision, draft, submit).filter(Boolean);
+    const band = el("div", { class: "verdict-band" }, panels[0], caseTimeline(dispute, decision, draft, submit));
+    const left = el("div", { class: "case-col" }, ...panels.slice(1));
+    const right = el("div", { class: "case-col" }, ...((decision && decision.status === "ok" && graphPanel(decision)) || [
       el("section", { class: "panel" }, el("h2", { text: "Evidence path" }),
         el("p", { class: "hint", text: "The graph path appears once the agent has a recommendation for this dispute." }))]));
     disposeGraph();
-    root.replaceChildren(header(dispute), el("div", { class: "case-grid" }, left, right));
+    root.replaceChildren(header(dispute), band, el("div", { class: "case-grid" }, left, right));
     mountPendingGraph();
   }
 
