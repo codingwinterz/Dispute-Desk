@@ -242,3 +242,21 @@ the poller and webhook never wait for the LLM. No PayPal write call is made.
 
 Sandbox limit: every sandbox dispute here was opened by the same test buyer, so the graph links
 disputes only through a shared device hash or IP, never through the buyer.
+
+## Merchant events (simulated new evidence)
+
+A merchant event is new evidence from the store's own systems, such as a late carrier scan. In
+production your store supplies this; in the sandbox it is simulated from a small JSON file:
+
+```bash
+.venv/Scripts/python scripts/merchant_event.py --file seed/events/yov_delivery_scan.json
+.venv/Scripts/python scripts/merchant_event.py --file seed/events/qqw_delivery_confirmation.json
+```
+
+The script finds the dispute from the event's `transaction_id` in the stored PayPal disputes and
+rejects unknown transactions (nothing is written). It adds the event to the graph as
+`source = "seeded"`, labelled "simulated merchant event", then re-runs that dispute's decision with
+the analyzer (one LLM call). The new decision is stored and the one it replaces is kept in the
+decision history. The case page shows "Merchant event received" in its timeline and, when the
+event triggered the current decision, the verdict before and after. Each event can be imported once
+(`event_id`); `--no-analyze` writes the event without re-deciding. No PayPal calls.

@@ -1328,3 +1328,17 @@ main button.secondary.small { font-size: 11px; padding: 6px 10px; }
 }
 /* Consistency: empty states read the same on every page. */
 .state p, .empty-note { color: var(--muted); font-size: 14.5px; max-width: 64ch; }
+
+/* ---- merchant events: before/after verdict and timeline entry ------------------------------------ */
+.verdict-change {
+  margin: 16px 0 2px; padding: 12px 14px; border-radius: var(--r-sm); max-width: 70ch;
+  background: var(--surface-2); border: 1px solid var(--border); border-left: 3px solid var(--primary);
+}
+.verdict-change.changed { border-left-width: 4px; }
+.vc-head { margin: 0 0 8px; font-weight: 700; color: var(--text); }
+.vc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.vc-side { display: inline-flex; align-items: center; gap: 8px; }
+.vc-risk { color: var(--muted); font-size: 14px; }
+.vc-arrow { color: var(--primary-text); font-weight: 700; }
+.vc-event { margin: 10px 0 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.case-timeline li.event .tl-dot { border-style: dashed; border-color: var(--seeded); }

@@ -13,6 +13,8 @@
   let editorDirty = false;   // unsaved draft edits: the 5-second refresh must not replace them
   let dialogOpen = false;    // the confirm dialog is open: don't re-render underneath it
   let lastResult = null;     // outcome of the last approval on this page, shown after re-render
+  let caseHistory = [];      // earlier decisions for this dispute (newest first), from GET /api/decisions/{id}
+  let caseEvents = [];       // simulated merchant events imported for this dispute
   let graph3d = null;        // live three.js view; disposed before every re-render and on leaving
   let pendingGraph = null;   // a 3D view to mount once its container is in the page
   const MAX_DRAFT = 2000;    // matches the server's cap (disputedesk/drafts.py)
@@ -97,6 +99,7 @@
             el("span", { class: "cap", text: "risk score, 0 to 100" }))),
         rec.reasoning && rec.reasoning[0] ? el("p", { class: "main-reason" },
           el("span", { class: "main-reason-label", text: "Main reason" }), rec.reasoning[0].point) : null,
+        verdictChange(rec),
         el("span", { class: "cap verdict-meta", text: `analyzed ${new Date(rec.created_at).toLocaleString()} by ${rec.model}` })),
       el("section", { class: "panel" }, el("h2", { text: "Why" }), reasons, rulesBlock),
       // An accept sends the fixed note shown in the approval panel, so the evidence draft only
@@ -482,9 +485,17 @@
 
   function caseTimeline(d, rec, draft, submit) {
     const sub = submit && submit.submission;
+    const afterEvent = Boolean(rec && rec.trigger && rec.trigger.startsWith("merchant_event:"));
+    const verdict = (r) => (r.decision === "DEFEND" ? "Defend" : "Accept");
     const steps = [
       [d.detected_at, `Detected through the ${d.detected_via === "webhook" ? "PayPal webhook" : "dispute poller"}`, ""],
-      [rec && rec.created_at, rec ? (rec.status === "ok" ? "Analyzed by the agent" : "Analysis failed") : "", rec && rec.status !== "ok" ? "failed" : ""],
+      // Earlier decisions (kept when the agent re-decided), then the current one.
+      ...caseHistory.map((h) => [h.created_at, h.status === "ok" ? `Analyzed by the agent: ${verdict(h)}, risk ${h.risk_score}` : "Analysis failed",
+                                  h.status === "ok" ? "" : "failed"]),
+      ...caseEvents.map((e) => [e.received_at, `Merchant event received: ${String(e.status).toLowerCase().replaceAll("_", " ")} scan (simulated)`, "event"]),
+      [rec && rec.created_at, rec ? (rec.status === "ok"
+        ? (afterEvent ? `Re-analyzed after the merchant event: ${verdict(rec)}, risk ${rec.risk_score}` : "Analyzed by the agent")
+        : "Analysis failed") : "", rec && rec.status !== "ok" ? "failed" : ""],
       [draft && draft.edited ? draft.updated_at : null, "Draft edited and saved", ""],
       [sub && sub.started_at, "Approved and sent", ""],
       [sub && sub.finished_at, sub ? { succeeded: `PayPal accepted it (HTTP ${sub.http_status})`, rejected: `PayPal refused it (HTTP ${sub.http_status})`, unknown: "Outcome unknown" }[sub.state] || "" : "",
@@ -496,6 +507,28 @@
         el("span", { class: "tl-dot", "aria-hidden": "true" }),
         el("span", { class: "tl-label", text: label }),
         el("time", { class: "tl-time num", datetime: at, text: new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) })))));
+  }
+
+  // Before/after when a simulated merchant event made the agent decide again. Read-only: it shows the
+  // decision the event replaced (kept in the history) next to the current one, and the event itself.
+  function verdictChange(rec) {
+    const trigger = rec.trigger || "";
+    if (!trigger.startsWith("merchant_event:")) return null;
+    const ev = caseEvents.find((e) => `merchant_event:${e.event_id}` === trigger);
+    const prev = caseHistory.find((h) => h.replaced_by === trigger);
+    if (!ev || !prev) return null;
+    const changed = prev.status === "ok" && prev.decision !== rec.decision;
+    const side = (label, r) => el("span", { class: "vc-side" }, el("span", { class: "cap", text: label }),
+      r.status === "ok" ? DD.decisionChip({ status: "ok", decision: r.decision }) : el("span", { class: "chip pending", text: "No decision" }),
+      r.status === "ok" ? el("span", { class: "vc-risk num", text: `risk ${r.risk_score}` }) : null);
+    const when = new Date(ev.time).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    return el("div", { class: `verdict-change${changed ? " changed" : ""}` },
+      el("p", { class: "vc-head", text: changed ? "The recommendation changed after a merchant event"
+        : "Re-analyzed after a merchant event: the recommendation did not change" }),
+      el("div", { class: "vc-row" }, side("Before the event", prev), el("span", { class: "vc-arrow", "aria-hidden": "true", text: "→" }), side("After", rec)),
+      el("p", { class: "vc-event" },
+        `${ev.event_id}: ${ev.carrier ? `${ev.carrier} ` : ""}carrier scan, ${String(ev.status).toLowerCase().replaceAll("_", " ")} at ${ev.location}, ${when}. `,
+        DD.sourceTag(ev.source), ` Simulated merchant event. ${ev.note_production}`));
   }
 
   function disposeGraph() {
@@ -547,6 +580,8 @@
     if (editorDirty || dialogOpen) return;  // never replace unsaved edits or an open confirm dialog
     lastKey = key;
     const { dispute, decision, draft, submit } = body;
+    caseHistory = body.history || [];
+    caseEvents = body.events || [];
     // Hierarchy: 1) decision and risk (full width, with the timeline), 2) reasons beside the evidence
     // path, 3) draft and approval. Same panels as before; only their placement changes.
     const panels = decisionPanels(dispute, decision, draft, submit).filter(Boolean);
