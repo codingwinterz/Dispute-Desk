@@ -1,0 +1,158 @@
+"""Palette pass, phase 1: one token block, contrast with the grain composited, colour roles kept in budget."""
+
+import re
+from pathlib import Path
+
+WEB = Path(__file__).resolve().parent.parent / "disputedesk" / "web"
+CSS = (WEB / "static" / "app.css").read_text(encoding="utf-8")
+COMMON = (WEB / "static" / "common.js").read_text(encoding="utf-8")
+ROOT_BLOCK = CSS[CSS.index(":root {"):CSS.index("}", CSS.index(":root {"))]
+AFTER_ROOT = CSS[CSS.index("}", CSS.index(":root {")) + 1:]
+TOKENS = dict(re.findall(r"--([a-z0-9-]+):\s*(#[0-9a-f]{6})", ROOT_BLOCK))
+COLOUR_LITERAL = re.compile(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(\s*\d|\bhsla?\(|\b0x[0-9a-fA-F]{6}\b")
+
+
+def lum(h):
+    r, g, b = (int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4  # noqa: E731
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+
+
+def ratio(a, b):
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def over(base, top, alpha):
+    mix = [round(int(base[i:i + 2], 16) * (1 - alpha) + int(top[i:i + 2], 16) * alpha) for i in (1, 3, 5)]
+    return "#" + "".join(f"{c:02x}" for c in mix)
+
+
+def backgrounds():
+    """Every ground and surface text or marks can sit on, with the page grain composited on the grounds."""
+    grain = float(re.search(r"opacity='([0-9.]+)'", re.search(r"--grain:\s*(url\([^;]+\));", CSS).group(1)).group(1))
+    out = {name: TOKENS[name] for name in ("ground", "ground-deep", "surface", "surface-2")}
+    for name in ("ground", "ground-deep"):
+        out[f"{name}+light grain"] = over(TOKENS[name], "#ffffff", grain)
+        out[f"{name}+dark grain"] = over(TOKENS[name], "#000000", grain)
+    return out
+
+
+def rules():
+    """(selector, declarations) for every CSS rule, including rules inside @media blocks."""
+    return [(sel.strip(), body) for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", AFTER_ROOT)]
+
+
+def test_every_palette_role_is_a_token_in_the_one_root_block():
+    for name in ("ground", "ground-deep", "surface", "surface-2", "border", "text", "muted", "placeholder", "control-edge",
+                 "primary", "primary-fill", "primary-text", "on-primary", "seeded", "splash", "on-splash", "danger",
+                 "focus", "shade", "sheen"):
+        assert name in TOKENS, name
+    # Other :root blocks (the phone breakpoint's --gutter) may change spacing, never colours.
+    for block in re.findall(r":root \{([^}]*)\}", AFTER_ROOT):
+        assert not COLOUR_LITERAL.search(block), block
+
+
+def test_text_tokens_pass_4_5_on_every_ground_and_surface_with_grain():
+    for text in ("text", "muted", "placeholder", "primary-text", "splash", "danger", "focus", "seeded"):
+        for where, bg in backgrounds().items():
+            assert ratio(TOKENS[text], bg) >= 4.5, (text, where, round(ratio(TOKENS[text], bg), 2))
+
+
+def test_graphic_marks_and_control_edges_reach_3_5():
+    for mark in ("primary", "control-edge", "focus", "seeded", "splash", "danger"):
+        for where, bg in backgrounds().items():
+            assert ratio(TOKENS[mark], bg) >= 3.5, (mark, where, round(ratio(TOKENS[mark], bg), 2))
+
+
+def test_text_on_fills():
+    assert TOKENS["on-primary"] == "#ffffff"  # white on solid blue chips
+    assert ratio(TOKENS["on-primary"], TOKENS["primary-fill"]) >= 4.5
+    assert ratio(TOKENS["on-splash"], TOKENS["splash"]) >= 4.5  # charcoal on tangerine (Approve, DUE SOON)
+    assert lum(TOKENS["on-splash"]) < 0.02  # charcoal, not white
+    assert ".chip.defend { box-shadow: 0 0 0 1px var(--primary)" in CSS  # its edge is the 3.5:1 blue
+
+
+def test_red_and_tangerine_are_clearly_different_hues():
+    import colorsys
+
+    def hue(h):
+        return colorsys.rgb_to_hsv(*(int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)))[0] * 360
+    gap = abs(hue(TOKENS["splash"]) - hue(TOKENS["danger"]))
+    assert min(gap, 360 - gap) >= 30
+
+
+def test_no_hard_coded_colours_outside_the_root_block():
+    assert not COLOUR_LITERAL.findall(AFTER_ROOT), COLOUR_LITERAL.findall(AFTER_ROOT)[:5]
+    for js in (WEB / "static").glob("*.js"):
+        found = COLOUR_LITERAL.findall(js.read_text(encoding="utf-8"))
+        assert not found, (js.name, found[:5])
+    for page in WEB.glob("*.html"):
+        found = COLOUR_LITERAL.findall(re.sub(r'href="https://fonts[^"]+"', "", page.read_text(encoding="utf-8")))
+        assert not found, (page.name, found[:5])
+    # The one exception: the static favicon file (SVG can't read CSS); common.js repaints it from the tokens.
+
+
+def test_tangerine_stays_on_its_short_list():
+    allowed = ("aria-current", ".hero-line .hl", ".ticker-item .hl", ".badge.waiting", "[data-due]", ".pipe-title::after",
+               ".verdict-stamp", "svg .node.used", "svg .edge.used", ".graph-legend .swatch", ".shape.glow",
+               ".approve", ".due-soon", ".map-ring", ".lg.is-waiting")
+    for sel, body in rules():
+        if "--splash" in body or "--on-splash" in body:
+            assert any(a in sel for a in allowed), sel
+    for name in ("casemap.js", "graph3d.js"):
+        js = (WEB / "static" / name).read_text(encoding="utf-8")
+        # casemap: the waiting ring. graph3d: the cited glow (palette entry, label outline, three halo stops).
+        assert js.count('"--splash"') <= (1 if name == "casemap.js" else 5), name
+    assert '"--splash"' not in COMMON  # never in shared helpers
+
+
+def test_red_only_for_errors_offline_and_overdue():
+    allowed = (".banner", ".chip.error", ".live.is-offline", ".overdue", ".hero-line .hl.urgent", ".error-text",
+               ".result.error", ".event.failed", "li.failed", ".figure.urgent")
+    for sel, body in rules():
+        if "--danger" in body:
+            assert any(a in sel for a in allowed), sel
+
+
+def test_defend_solid_accept_outlined_with_a_2px_stroke():
+    assert ".chip.defend { background: var(--primary-fill); color: var(--on-primary); }" in CSS
+    assert ".chip.accept { border: 1.5px solid var(--primary); color: var(--primary-text);" in CSS
+    accept = re.search(r"\.verdict-word\.is-accept \{([^}]*)\}", CSS).group(1)
+    assert "color: transparent" in accept
+    width = float(re.search(r"-webkit-text-stroke:\s*([0-9.]+)px", accept).group(1))
+    assert width >= 2
+    for name in ("overview.js", "case.js"):
+        assert "verdict-word is-${" in (WEB / "static" / name).read_text(encoding="utf-8")
+
+
+def test_waiting_and_with_paypal_markers_and_source_tags():
+    assert ".badge.waiting::before { background: var(--splash); }" in CSS
+    assert ".badge.review::before { background: transparent; border: 2px solid var(--primary);" in CSS
+    assert ".tag.paypal { border-color: var(--primary);" in CSS and ".tag.seeded { border: 1px dashed" in CSS
+    assert 'class: "tag paypal"' in COMMON
+
+
+def test_due_soon_chip_under_72_hours_and_red_only_when_overdue():
+    assert 'el("span", { class: "due-soon", hidden: !(c.urgent && !isOverdue(c)), text: "Due soon" })' in COMMON
+    assert 'node.classList.toggle("overdue", isOverdue(c));' in COMMON  # the shared tick keeps it current
+    assert "[data-due].overdue .cd-main { color: var(--danger); }" in CSS
+    chip = re.search(r"\.due-soon \{([^}]*)\}", CSS).group(1)
+    assert "color: var(--on-splash)" in chip and "background: var(--splash)" in chip
+    overview = (WEB / "static" / "overview.js").read_text(encoding="utf-8")
+    assert '`hl${c.urgent ? " urgent" : ""}`' not in overview  # the hero turns red only when overdue
+
+
+def test_scripts_read_colours_through_a_probe_element():
+    body = COMMON.split("function resolveColor(name)", 1)[1].split("function color(name)", 1)[0]
+    assert 'probe.style.color = `var(${name})`' in body and "getComputedStyle(probe).color" in body
+    assert "console.error(`DisputeDesk: colour token ${name} is not defined" in body
+    assert "color(srgb" in body  # color-mix() results parse too
+    assert "DD.colorNum(" in (WEB / "static" / "graph3d.js").read_text(encoding="utf-8")
+    assert "DD.colorNum(" in (WEB / "static" / "casemap.js").read_text(encoding="utf-8")
+
+
+def test_approve_action_is_the_one_tangerine_button():
+    case = (WEB / "static" / "case.js").read_text(encoding="utf-8")
+    assert case.count('class: "primary approve"') == 2  # the Approve button and its confirm button
+    assert "button.primary.approve { background: var(--splash); color: var(--on-splash); }" in CSS

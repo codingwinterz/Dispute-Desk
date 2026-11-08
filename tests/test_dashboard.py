@@ -94,7 +94,7 @@ def test_webhook_stays_public_through_the_tunnel(client):
 # --- pages -------------------------------------------------------------------------------------
 
 def test_pages_and_assets_are_served_locally(client):
-    for path, marker in [("/", 'id="grid"'), ("/case/PP-R-ANY", 'id="case"'), ("/static/app.css", "--accent"),
+    for path, marker in [("/", 'id="grid"'), ("/case/PP-R-ANY", 'id="case"'), ("/static/app.css", "--primary"),
                          ("/static/common.js", "renderNav"), ("/static/queue.js", "createGrid"),
                          ("/static/case.js", "graphPanel")]:
         resp = client.get(path)
@@ -223,8 +223,9 @@ def test_contrast_tokens_meet_wcag():
         hi, lo = sorted((lum(a), lum(b)), reverse=True)
         return (hi + 0.05) / (lo + 0.05)
     tokens = dict(re.findall(r"--([a-z0-9-]+):\s*(#[0-9a-f]{6})", css))
-    surfaces = [tokens[k] for k in ("ink-0", "ink", "panel", "panel-2")]
-    for text in ("text", "muted", "accent", "urgent", "placeholder"):
+    surfaces = [tokens[k] for k in ("ground-deep", "ground", "surface", "surface-2")]
+    for text in ("text", "muted", "primary-text", "splash", "danger", "placeholder"):
         assert min(ratio(tokens[text], s) for s in surfaces) >= 4.5, text
-    assert min(ratio(tokens["control-edge"], s) for s in surfaces) >= 3.0
-    assert ratio(tokens["accent-ink"], tokens["accent"]) >= 4.5
+    assert min(ratio(tokens["control-edge"], s) for s in surfaces) >= 3.5
+    assert ratio(tokens["on-primary"], tokens["primary-fill"]) >= 4.5
+    assert ratio(tokens["on-splash"], tokens["splash"]) >= 4.5

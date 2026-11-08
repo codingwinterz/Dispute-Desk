@@ -91,7 +91,7 @@
       // Tier 1, editorial: the verdict as a huge word, the risk score as a large number, the main reason.
       el("section", { class: "panel verdict-panel", "aria-label": "Recommendation" },
         el("div", { class: "verdict-hero" },
-          el("span", { class: "verdict-word", text: rec.decision }),
+          el("span", { class: `verdict-word is-${String(rec.decision).toLowerCase()}`, text: rec.decision }),
           el("span", { class: "verdict-risk", title: "Likelihood, 0 to 100, that the buyer's claim is valid (you would lose if you defended), based only on the evidence on file" },
             el("span", { class: "risk-number num", text: String(rec.risk_score) }),
             el("span", { class: "cap", text: "risk score, 0 to 100" }))),
@@ -230,7 +230,7 @@
     if (!submit || !submit.action) return null;
     const demo = DD.mode.demo;
     const reasons = demo ? ["This is recorded sandbox data, so nothing can be sent to PayPal from here. The dry run still shows the exact request an approval would send."] : (submit.reasons || []);
-    const approve = el("button", { class: "primary", type: "button", disabled: demo || !submit.can_submit,
+    const approve = el("button", { class: "primary approve", type: "button", disabled: demo || !submit.can_submit,
                                    "aria-describedby": "approve-reasons", text: demo ? DD.DEMO_LABEL : submit.label });
     if (!demo) approve.addEventListener("click", () => openConfirm(d, submit));
     const dryButton = el("button", { class: "secondary", type: "button", text: "Show the exact request (dry run)" });
@@ -271,7 +271,7 @@
   function openConfirm(d, submit) {
     const amount = DD.money(d.amount);
     const cancel = el("button", { class: "secondary", type: "button", text: "Cancel", autofocus: true });
-    const confirm = el("button", { class: "primary", type: "button", text: submit.label });
+    const confirm = el("button", { class: "primary approve", type: "button", text: submit.label });
     const status = el("p", { class: "hint", "aria-live": "polite" });
     const dialog = el("dialog", { class: "confirm", "aria-labelledby": "confirm-title" },
       el("h2", { id: "confirm-title", text: `${submit.label}?` }),

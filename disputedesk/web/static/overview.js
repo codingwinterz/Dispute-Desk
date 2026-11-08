@@ -65,7 +65,7 @@
     if (c.text.startsWith("Overdue")) {
       return line([el("span", { class: "hl urgent" }, "OVERDUE"), chars(c.text.replace("Overdue by ", "").toUpperCase() + ".", "hl urgent")], 2);
     }
-    return line([chars(c.text.toUpperCase(), `hl${c.urgent ? " urgent" : ""}`), "LEFT."], 2);
+    return line([chars(c.text.toUpperCase(), "hl"), "LEFT."], 2);  // red is for overdue only
   }
 
   function hero(waiting, next, firstRender) {
@@ -73,12 +73,16 @@
     const board = el("section", { class: `hero-board${firstRender ? " rise" : ""}`, "aria-label": "Disputes waiting for your response" },
       line([el("span", { class: "hl" }, chars(String(n), "")), n === 1 ? "DISPUTE." : "DISPUTES."], 0),
       next ? countdownLine(next) : line(["NOTHING", "DUE."], 2),
-      caption());
+      caption(next));
     return board;
   }
 
-  function caption() {
+  function caption(next) {
     const cap = el("span", { class: "cap" }, "Waiting on you", el("span", { class: "sep", text: "." }));
+    if (next) {
+      const c = DD.countdown(next.seller_response_due_date);
+      if (c.urgent && !DD.isOverdue(c)) cap.prepend(DD.dueSoonChip(c), " ");
+    }
     if (DD.mode.demo) {
       cap.append(`recorded sandbox data, as of ${DD.recordedLabel()}`);
     } else {
@@ -123,7 +127,7 @@
     const decided = d.decision && d.decision.status === "ok";
     const summary = el("div", { class: "card-layer card-front" },
       decided ? el("div", { class: "card-verdict" },
-        el("span", { class: "verdict-word", text: d.decision.decision }),
+        el("span", { class: `verdict-word is-${d.decision.decision.toLowerCase()}`, text: d.decision.decision }),
         el("span", { class: "card-risk", title: "Likelihood, 0 to 100, that the buyer's claim is valid, from the evidence on file" },
           el("span", { class: "risk-number num", text: String(d.decision.risk_score) }),
           el("span", { class: "cap", text: "risk" }))) : null,

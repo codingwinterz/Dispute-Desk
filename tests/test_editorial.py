@@ -47,9 +47,9 @@ def test_grain_is_at_most_four_percent_and_text_still_passes_contrast():
     body_rule = re.search(r"(?m)^body \{[^}]+\}", CSS).group(0)  # the standalone body rule
     assert "var(--grain)" in body_rule  # page ground only, under the panels
     tokens = dict(re.findall(r"--([a-z0-9-]+):\s*(#[0-9a-f]{6})", CSS))
-    for ground in (tokens["ink"], tokens["ink-0"]):
+    for ground in (tokens["ground"], tokens["ground-deep"]):
         for grained in (over(ground, "#ffffff", opacity), over(ground, "#000000", opacity)):
-            for text in ("text", "muted", "accent", "urgent", "placeholder"):
+            for text in ("text", "muted", "primary-text", "splash", "danger", "placeholder"):
                 assert ratio(tokens[text], grained) >= 4.5, (text, grained)
 
 
@@ -116,7 +116,7 @@ def test_card_swap_works_on_focus_and_is_static_without_motion():
 
 
 def test_case_page_tier_one_is_editorial_and_leaves_approval_code_alone():
-    assert 'el("span", { class: "verdict-word", text: rec.decision })' in CASE
+    assert 'el("span", { class: `verdict-word is-${String(rec.decision).toLowerCase()}`, text: rec.decision })' in CASE
     assert "\"The agent's\"" in CASE and "callHead" in CASE
     for untouched in ("function openConfirm(d, submit)", "function approvePanel(d, submit)", "/dry-run"):
         assert untouched in CASE
@@ -341,7 +341,8 @@ def test_pipeline_reads_only_existing_get_routes_and_respects_motion():
 
 def test_every_page_has_the_folder_favicon():
     svg = (WEB / "static" / "favicon.svg").read_text(encoding="utf-8")
-    assert "#e2b85c" in svg and "<script" not in svg
+    assert "<script" not in svg and 'rel="icon"' in COMMON  # the static file is the no-JavaScript fallback
+    assert "function paintFavicon()" in COMMON and 'color("--primary")' in COMMON
     for page in WEB.glob("*.html"):
         assert '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">' in page.read_text(encoding="utf-8"), page.name
 

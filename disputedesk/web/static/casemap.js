@@ -65,9 +65,10 @@ const DDMap = (() => {
       const meta = el("span", { class: "mn-meta" }, sr(", "), el("span", { class: "mn-kind", text: KIND_WORD[node.kind] }));
       if (node.kind !== "paypal" && d.seller_response_due_date) {
         const c = DD.countdown(d.seller_response_due_date);  // DD.clock(): the recording's time in demo mode
+        const overdue = DD.isOverdue(c);
         // "time left:" reads correctly for both "7d 4h" and "Overdue by 2h" as the shared tick updates it.
-        meta.append(sr(", time left: "), el("span", { class: `mn-due${c.urgent ? " urgent" : ""}`, "data-due": d.seller_response_due_date, title: "Time left to respond" },
-          el("span", { class: "cd-main", text: c.text })));
+        meta.append(sr(", time left: "), el("span", { class: `mn-due${c.urgent ? " urgent" : ""}${overdue ? " overdue" : ""}`, "data-due": d.seller_response_due_date, title: "Time left to respond" },
+          el("span", { class: "cd-main", text: c.text }), DD.dueSoonChip(c)));
       }
       const link = el("a", { class: `map-node is-${node.kind} side-${node.side}`, href: `/case/${encodeURIComponent(d.dispute_id)}`,
                              style: `left:${pct(node.x, W)};top:${pct(node.y, H)}` },
@@ -98,8 +99,10 @@ const DDMap = (() => {
     const kinds = [...new Set(plan.nodes.map((n) => n.kind))];
     const order = ["defend", "accept", "pending", "paypal"].filter((k) => kinds.includes(k));
     if (!order.length) return null;
+    const waiting = plan.nodes.some((n) => n.kind !== "paypal");
     return el("p", { class: "map-legend cap" }, ...order.map((k) =>
-      el("span", { class: `lg is-${k}` }, el("span", { class: "lg-dot", "aria-hidden": "true" }), KIND_WORD[k])));
+      el("span", { class: `lg is-${k}` }, el("span", { class: "lg-dot", "aria-hidden": "true" }), KIND_WORD[k])),
+      waiting ? el("span", { class: "lg is-waiting" }, el("span", { class: "lg-dot", "aria-hidden": "true" }), "Waiting on you") : null);
   }
 
   // ---- flat SVG (reduced motion, no WebGL) -----------------------------------------------------
@@ -122,6 +125,7 @@ const DDMap = (() => {
     svg.append(s("path", { class: "map-merchant", d: `M${CX - 26} ${CY - 16} h18 l6 -7 h28 v39 h-52 z` }));
     const dots = plan.nodes.map((node) => {
       const r = node.kind === "paypal" ? 8 : 13;
+      if (node.kind !== "paypal") svg.append(s("circle", { class: "map-ring", cx: node.x, cy: node.y, r: r + 6 }));  // waiting on you
       const dot = s("circle", { class: `map-dot is-${node.kind}`, cx: node.x, cy: node.y, r });
       svg.append(dot);
       return dot;
@@ -131,16 +135,23 @@ const DDMap = (() => {
 
   // ---- three.js (motion allowed, WebGL available) -----------------------------------------------
 
-  const COLORS = { defend: 0xe2b85c, accept: 0xd5dbe4, pending: 0x95a1b3, paypal: 0x4a5668, edge: 0x3a4657, accent: 0xe2b85c };
+  // Colours come from the CSS tokens (DD.colorNum), read when the map is drawn.
+  function palette() {
+    return {
+      defend: DD.colorNum("--primary"), accept: DD.colorNum("--primary-text"), pending: DD.colorNum("--muted"),
+      paypal: DD.colorNum("--primary"), edge: DD.colorNum("--border"), merchant: DD.colorNum("--primary"),
+      ring: DD.colorNum("--splash"), light: DD.colorNum("--sheen"),
+    };
+  }
 
   function glowTexture() {
     const c = document.createElement("canvas");
     c.width = c.height = 64;
     const g = c.getContext("2d");
     const grad = g.createRadialGradient(32, 32, 1, 32, 32, 32);
-    grad.addColorStop(0, "rgba(243, 212, 143, 1)");
-    grad.addColorStop(0.4, "rgba(226, 184, 92, 0.35)");
-    grad.addColorStop(1, "rgba(226, 184, 92, 0)");
+    grad.addColorStop(0, DD.rgba("--primary-text", 1));
+    grad.addColorStop(0.4, DD.rgba("--primary", 0.35));
+    grad.addColorStop(1, DD.rgba("--primary", 0));
     g.fillStyle = grad;
     g.fillRect(0, 0, 64, 64);
     return new THREE.CanvasTexture(c);
@@ -148,6 +159,7 @@ const DDMap = (() => {
 
   function webgl(plan, container, onLost) {
     const { W, H, CX, CY, RX, RY } = plan.box;
+    const COLORS = palette();
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -161,19 +173,19 @@ const DDMap = (() => {
     const camera = new THREE.OrthographicCamera(-W / 2, W / 2, H / 2, -H / 2, -500, 500);
     camera.position.set(0, 0, 200);
     const scene = new THREE.Scene();
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const key = new THREE.DirectionalLight(0xffffff, 1.2);
+    scene.add(new THREE.AmbientLight(COLORS.light, 0.6));
+    const key = new THREE.DirectionalLight(COLORS.light, 1.2);
     key.position.set(-120, 160, 220);
     scene.add(key);
     const at = (x, y) => new THREE.Vector3(x - CX, CY - y, 0);
     const glow = glowTexture();
 
-    // Merchant: a slowly turning manila crystal inside a tilted orbit ring.
+    // Merchant: a slowly turning blue crystal inside a tilted orbit ring.
     const merchant = new THREE.Mesh(new THREE.OctahedronGeometry(24, 0),
-      new THREE.MeshStandardMaterial({ color: COLORS.accent, roughness: 0.35, metalness: 0.2, emissive: COLORS.accent, emissiveIntensity: 0.25, flatShading: true }));
+      new THREE.MeshStandardMaterial({ color: COLORS.merchant, roughness: 0.35, metalness: 0.2, emissive: COLORS.merchant, emissiveIntensity: 0.25, flatShading: true }));
     scene.add(merchant);
     const ring = new THREE.Mesh(new THREE.TorusGeometry(38, 1.1, 8, 72),
-      new THREE.MeshBasicMaterial({ color: COLORS.accent, transparent: true, opacity: 0.45 }));
+      new THREE.MeshBasicMaterial({ color: COLORS.accept, transparent: true, opacity: 0.45 }));
     ring.rotation.x = 1.15;
     scene.add(ring);
     const orbit = new THREE.Line(new THREE.BufferGeometry().setFromPoints(
@@ -187,17 +199,24 @@ const DDMap = (() => {
       const dim = node.kind === "paypal";
       const edgeMat = dim
         ? new THREE.LineDashedMaterial({ color: COLORS.edge, dashSize: 5, gapSize: 5, transparent: true, opacity: 0.8 })
-        : new THREE.LineBasicMaterial({ color: node.kind === "defend" ? COLORS.accent : COLORS.pending, transparent: true, opacity: 0.4 });
+        : new THREE.LineBasicMaterial({ color: node.kind === "defend" ? COLORS.defend : COLORS.pending, transparent: true, opacity: 0.45 });
       const edge = new THREE.Line(new THREE.BufferGeometry().setFromPoints([at(CX, CY), p]), edgeMat);
       if (dim) edge.computeLineDistances();
       scene.add(edge);
-      const mat = node.kind === "pending"
-        ? new THREE.MeshBasicMaterial({ color: COLORS.pending, wireframe: true })
-        : new THREE.MeshStandardMaterial({ color: COLORS[node.kind], roughness: 0.4, metalness: 0.1, transparent: dim, opacity: dim ? 0.7 : 1 });
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(dim ? 8 : 13, 28, 18), mat);
+      // Defend: solid blue. Accept: outlined (wireframe) light blue. Pending: grey wireframe. With PayPal: dimmed blue.
+      const mat = node.kind === "pending" || node.kind === "accept"
+        ? new THREE.MeshBasicMaterial({ color: COLORS[node.kind], wireframe: true })
+        : new THREE.MeshStandardMaterial({ color: COLORS[node.kind], roughness: 0.4, metalness: 0.1, transparent: dim, opacity: dim ? 0.45 : 1 });
+      const outlined = node.kind === "pending" || node.kind === "accept";  // a sparse wireframe reads as an outline
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(dim ? 8 : 13, outlined ? 10 : 28, outlined ? 6 : 18), mat);
       mesh.position.copy(p);
       scene.add(mesh);
       meshes.push(mesh);
+      if (!dim) {  // waiting on you: a tangerine ring around the node
+        const halo = new THREE.Mesh(new THREE.TorusGeometry(19, 1.4, 8, 48), new THREE.MeshBasicMaterial({ color: COLORS.ring }));
+        halo.position.copy(p);
+        scene.add(halo);
+      }
       if (!dim) {  // waiting on you: a spark travels from the dispute to the merchant
         const spark = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
         spark.scale.set(14, 14, 1);

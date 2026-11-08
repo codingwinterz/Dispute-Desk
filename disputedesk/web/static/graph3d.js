@@ -4,13 +4,17 @@
 "use strict";
 
 const DD3D = (() => {
-  const COLORS = {
-    accent: 0xe2b85c,
-    paypal: 0x8ea3bf,      // solid sphere: a PayPal record
-    seeded: 0xb9a57a,      // wireframe crystal: merchant-supplied test data
-    muted: 0x4a5668,
-    edge: 0x3a4657,
-  };
+  // Colours come from the CSS tokens (DD.colorNum / DD.rgba), read when the graph is mounted.
+  function palette() {
+    return {
+      accent: DD.colorNum("--splash"),    // cited by the agent: tangerine glow
+      paypal: DD.colorNum("--primary"),   // solid sphere: a PayPal record
+      seeded: DD.colorNum("--seeded"),    // wireframe crystal: merchant-supplied test data
+      edge: DD.colorNum("--border"),
+      light: DD.colorNum("--sheen"),
+    };
+  }
+  let COLORS = null;
   const MAX_LINKED = 6;    // the decision never needs more; extra links are counted in the legend
 
   function reducedMotion() {
@@ -39,8 +43,8 @@ const DD3D = (() => {
     const W = 512, H = 168, c = document.createElement("canvas");
     c.width = W; c.height = H;
     const g = c.getContext("2d");
-    g.fillStyle = "rgba(19, 25, 34, 0.86)";
-    g.strokeStyle = cited ? "rgba(226, 184, 92, 0.95)" : "rgba(42, 52, 66, 1)";
+    g.fillStyle = DD.rgba("--ground", 0.86);
+    g.strokeStyle = cited ? DD.rgba("--splash", 0.95) : DD.rgba("--border", 1);
     g.lineWidth = cited ? 5 : 3;
     const r = 18;
     g.beginPath();
@@ -48,14 +52,14 @@ const DD3D = (() => {
     g.quadraticCurveTo(W - 2, H - 2, W - r, H - 2); g.lineTo(r, H - 2); g.quadraticCurveTo(2, H - 2, 2, H - r);
     g.lineTo(2, r); g.quadraticCurveTo(2, 2, r, 2); g.closePath(); g.fill(); g.stroke();
     g.font = "600 44px 'Public Sans', system-ui, sans-serif";
-    g.fillStyle = "#e6e9ee";
+    g.fillStyle = DD.color("--text");
     g.fillText(title, 26, 64);
     g.font = "400 34px 'Public Sans', system-ui, sans-serif";
-    g.fillStyle = "#95a1b3";
+    g.fillStyle = DD.color("--muted");
     g.fillText(sub.length > 26 ? sub.slice(0, 25) + "…" : sub, 26, 124);
     g.font = "700 30px 'Public Sans', system-ui, sans-serif";
     g.textAlign = "right";
-    g.fillStyle = tag === "seeded" ? "#e2b85c" : "#95a1b3";
+    g.fillStyle = tag === "seeded" ? DD.color("--seeded") : DD.color("--primary-text");
     g.fillText(tag === "seeded" ? "seeded" : "PayPal", W - 26, 62);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -68,9 +72,9 @@ const DD3D = (() => {
     c.width = c.height = 128;
     const g = c.getContext("2d");
     const grad = g.createRadialGradient(64, 64, 4, 64, 64, 64);
-    grad.addColorStop(0, "rgba(226, 184, 92, 0.85)");
-    grad.addColorStop(0.35, "rgba(226, 184, 92, 0.28)");
-    grad.addColorStop(1, "rgba(226, 184, 92, 0)");
+    grad.addColorStop(0, DD.rgba("--splash", 0.85));
+    grad.addColorStop(0.35, DD.rgba("--splash", 0.28));
+    grad.addColorStop(1, DD.rgba("--splash", 0));
     g.fillStyle = grad;
     g.fillRect(0, 0, 128, 128);
     return new THREE.CanvasTexture(c);
@@ -81,6 +85,7 @@ const DD3D = (() => {
    * cited by the agent, `labels` maps ref -> {title, sub}. Returns {dispose, stats, linkedHidden}.
    */
   function mount(container, ctx, used, labels) {
+    COLORS = palette();
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -94,8 +99,8 @@ const DD3D = (() => {
     const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
     camera.position.set(0, 0.4, 12.6);  // framed so the linked disputes clear the bottom edge
     camera.lookAt(0, -0.7, 0);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    const key = new THREE.DirectionalLight(0xffffff, 1.1);
+    scene.add(new THREE.AmbientLight(COLORS.light, 0.55));
+    const key = new THREE.DirectionalLight(COLORS.light, 1.1);
     key.position.set(3, 5, 6);
     scene.add(key);
 
@@ -115,11 +120,12 @@ const DD3D = (() => {
     const place = (ref, x, y, z, source) => {
       const isUsed = used.has(ref) || (spine && SPINE.has(ref));
       const seeded = source === "seeded";
-      const color = isUsed ? COLORS.accent : seeded ? COLORS.seeded : COLORS.paypal;
+      // Nodes keep their own colour (PayPal blue, seeded wireframe); being cited adds a tangerine glow.
+      const color = seeded ? COLORS.seeded : COLORS.paypal;
       const geom = seeded ? new THREE.OctahedronGeometry(0.42, 0) : new THREE.SphereGeometry(0.36, 32, 20);
       const mat = new THREE.MeshStandardMaterial({
         color, roughness: 0.45, metalness: 0.15,
-        emissive: isUsed ? COLORS.accent : 0x000000, emissiveIntensity: isUsed ? 0.55 : 0,
+        emissive: color, emissiveIntensity: isUsed ? 0.3 : 0,
         transparent: seeded, opacity: seeded ? 0.35 : 1,
       });
       const mesh = new THREE.Mesh(geom, mat);
@@ -127,7 +133,7 @@ const DD3D = (() => {
       world.add(mesh);
       if (seeded) {  // the crystal's edges make seeded records read as "outline only"
         const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geom),
-          new THREE.LineBasicMaterial({ color: isUsed ? COLORS.accent : COLORS.seeded }));
+          new THREE.LineBasicMaterial({ color: COLORS.seeded }));  // cited: the halo glows, the outline stays seeded
         edges.position.copy(mesh.position);
         world.add(edges);
       }

@@ -114,6 +114,71 @@ const DD = (() => {
       el("span", { class: "sep", text: "." }), sourceTag(row.source));
   }
 
+  // ---- palette tokens --------------------------------------------------------------------
+  // Colours live only in app.css :root. Scripts (three.js, canvas labels, the favicon) read them here.
+  // A probe element resolves each token through the browser, so color-mix() and any other CSS colour
+  // syntax arrive as plain numbers that three.js and canvas understand.
+  const colorCache = new Map();
+  let probe = null;
+  function resolveColor(name) {
+    if (colorCache.has(name)) return colorCache.get(name);
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    if (!raw) {
+      console.error(`DisputeDesk: colour token ${name} is not defined in the :root block of app.css.`);
+      return { r: 128, g: 128, b: 128, a: 1 };  // visible grey, not a crash
+    }
+    if (!probe) {
+      probe = document.createElement("span");
+      probe.setAttribute("aria-hidden", "true");
+      probe.style.cssText = "position:absolute;width:0;height:0;overflow:hidden;pointer-events:none;";
+      document.documentElement.append(probe);
+    }
+    probe.style.color = "";
+    probe.style.color = `var(${name})`;
+    const parsed = parseColor(getComputedStyle(probe).color);
+    if (!parsed) {
+      console.error(`DisputeDesk: colour token ${name} (${raw}) could not be resolved to a colour.`);
+      return { r: 128, g: 128, b: 128, a: 1 };
+    }
+    colorCache.set(name, parsed);
+    return parsed;
+  }
+  // Computed colours come back as rgb()/rgba(), or as color(srgb r g b / a) for color-mix() results.
+  function parseColor(text) {
+    let m = text.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/);
+    if (m) return { r: +m[1], g: +m[2], b: +m[3], a: alpha(m[4]) };
+    m = text.match(/^color\(srgb\s+([\d.e-]+)\s+([\d.e-]+)\s+([\d.e-]+)(?:\s*\/\s*([\d.]+%?))?\s*\)$/);
+    if (m) return { r: Math.round(+m[1] * 255), g: Math.round(+m[2] * 255), b: Math.round(+m[3] * 255), a: alpha(m[4]) };
+    return null;
+  }
+  const alpha = (v) => (v === undefined ? 1 : v.endsWith("%") ? parseFloat(v) / 100 : +v);
+  const hex2 = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
+  /** "#rrggbb" for a token such as "--primary". */
+  function color(name) {
+    const c = resolveColor(name);
+    return `#${hex2(c.r)}${hex2(c.g)}${hex2(c.b)}`;
+  }
+  /** "rgba(r, g, b, a)" for a token, with its own alpha multiplied by `a`. */
+  function rgba(name, a = 1) {
+    const c = resolveColor(name);
+    return `rgba(${c.r}, ${c.g}, ${c.b}, ${+(c.a * a).toFixed(3)})`;
+  }
+  /** 0xRRGGBB for three.js. */
+  function colorNum(name) {
+    const c = resolveColor(name);
+    return (Math.round(c.r) << 16) | (Math.round(c.g) << 8) | Math.round(c.b);
+  }
+
+  // The favicon follows the palette: the folder mark drawn from the tokens (static file as a fallback).
+  function paintFavicon() {
+    const link = document.querySelector('link[rel="icon"]');
+    if (!link) return;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="${color("--ground-deep")}"/>`
+      + `<path fill="${color("--primary")}" d="M5 12.4h9.6L17.4 7H27v18.6H5z"/></svg>`;
+    link.href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  }
+  paintFavicon();
+
   // ---- motion helpers --------------------------------------------------------------------
   const reducedMotion = () => Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
@@ -227,6 +292,9 @@ const DD = (() => {
       const main = node.querySelector(".cd-main") || node;
       if (main.textContent !== c.text) main.textContent = c.text;
       node.classList.toggle("urgent", c.urgent);
+      node.classList.toggle("overdue", isOverdue(c));
+      const soon = node.querySelector(".due-soon");
+      if (soon) soon.hidden = !(c.urgent && !isOverdue(c));
     }
   }
   setInterval(tick, 1000);
@@ -251,10 +319,14 @@ const DD = (() => {
     return countdownNode(row.seller_response_due_date, withDate);
   }
 
+  const isOverdue = (c) => c.text.startsWith("Overdue");
+  // Under 72 hours and not overdue: a filled tangerine "Due soon" chip beside the countdown.
+  const dueSoonChip = (c) => el("span", { class: "due-soon", hidden: !(c.urgent && !isOverdue(c)), text: "Due soon" });
+
   function countdownNode(dueIso, withDate = true) {
     const c = countdown(dueIso);
-    return el("span", { class: `countdown${c.urgent ? " urgent" : ""}`, "data-due": dueIso || "" },
-      el("span", { class: "cd-main", text: c.text }),
+    return el("span", { class: `countdown${c.urgent ? " urgent" : ""}${isOverdue(c) ? " overdue" : ""}`, "data-due": dueIso || "" },
+      el("span", { class: "cd-row" }, el("span", { class: "cd-main", text: c.text }), dueSoonChip(c)),
       withDate && dueIso ? el("span", { class: "sub", title: mode.demo ? `Due ${dueDate(dueIso)}; countdown as recorded ${recordedLabel()}` : null,
         text: mode.demo ? `Due ${dueDate(dueIso).split(",")[0]}, as of ${recordedLabel().split(",")[0]}` : `Due ${dueDate(dueIso)}` }) : null);
   }
@@ -262,7 +334,7 @@ const DD = (() => {
   function sourceTag(source) {
     return source === "seeded"
       ? el("span", { class: "tag seeded", title: "Merchant-supplied sandbox test data, not from PayPal", text: "seeded" })
-      : el("span", { class: "tag", title: "From the PayPal sandbox API", text: "PayPal" });
+      : el("span", { class: "tag paypal", title: "From the PayPal sandbox API", text: "PayPal" });
   }
 
   function decisionChip(d) {
@@ -280,6 +352,6 @@ const DD = (() => {
       el("span", { text: String(score) }), bar);
   }
 
-  return { el, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, groupDisputes, deadlineNode, statusBadge, STATUS_HELP, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
+  return { el, color, rgba, colorNum, dueSoonChip, isOverdue, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, groupDisputes, deadlineNode, statusBadge, STATUS_HELP, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
            dueDate, sourceTag, decisionChip, riskNode, tick };
 })();
