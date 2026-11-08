@@ -70,7 +70,7 @@ def test_demo_countdowns_use_the_recorded_time_and_say_so():
 
 def test_ticker_copy_is_hidden_from_screen_readers_and_motion_rules_exist():
     assert '"aria-hidden": hidden ? "true" : null' in OVERVIEW
-    reduced = CSS.split("@media (prefers-reduced-motion: reduce)")[-1]
+    reduced = "".join(CSS.split("@media (prefers-reduced-motion: reduce)")[1:])  # every reduced-motion block
     for rule in (".rise .word", ".ticker-track", ".reveal-pending", ".hero-line"):
         assert rule in reduced, rule
     assert "html.is-hidden *" in CSS and "animation-play-state: paused !important" in CSS
@@ -82,3 +82,41 @@ def test_reveal_never_hides_content_without_motion():
     body = COMMON.split("function reveal(nodes)", 1)[1].split("\n  }\n", 1)[0]
     assert "reducedMotion()" in body and "IntersectionObserver" in body
     assert "getBoundingClientRect().top < window.innerHeight" in body  # on-screen content is never hidden
+
+
+# --- phase 2: case cards and the agent's call -------------------------------------------------
+
+CASE = (WEB / "static" / "case.js").read_text(encoding="utf-8")
+
+
+def between(text, start, end):
+    """The source between two markers (both must exist)."""
+    return text.split(start, 1)[1].split(end, 1)[0]
+
+
+def test_case_cards_show_a_verdict_only_for_decided_cases():
+    card = between(OVERVIEW, "function caseCard(d)", "function render(rows")
+    assert 'const decided = d.decision && d.decision.status === "ok";' in card
+    assert 'decided ? el("div", { class: "card-verdict" }' in card and "if (decided)" in card
+    assert "DD.caseCaption(d)" in card  # caption metadata with the source tag
+
+
+def test_main_reason_comes_from_the_existing_read_only_route_and_is_cached():
+    body = between(COMMON, "function topReason(row)", "function caseCaption(row)")
+    assert "fetch(`/api/decisions/${encodeURIComponent(row.dispute_id)}`" in body
+    assert "reasonCache" in body and 'd.status !== "ok"' in body and "method" not in body
+    assert "sourceTag(row.source)" in between(COMMON, "function caseCaption(row)", "motion helpers")
+
+
+def test_card_swap_works_on_focus_and_is_static_without_motion():
+    assert ".case-card.has-reason:focus-visible .card-back" in CSS
+    assert ".case-card.has-reason:hover .card-back" in CSS
+    reduced = "".join(CSS.split("@media (prefers-reduced-motion: reduce)")[1:])
+    assert ".card-layer { transition: none; }" in reduced
+
+
+def test_case_page_tier_one_is_editorial_and_leaves_approval_code_alone():
+    assert 'el("span", { class: "verdict-word", text: rec.decision })' in CASE
+    assert "\"The agent's\"" in CASE and "callHead" in CASE
+    for untouched in ("function openConfirm(d, submit)", "function approvePanel(d, submit)", "/dry-run"):
+        assert untouched in CASE

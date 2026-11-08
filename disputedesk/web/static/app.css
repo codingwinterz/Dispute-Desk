@@ -702,3 +702,54 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 @media (max-width: 900px) {
   .ticker-item { font-size: 20px; padding: 0 18px; }
 }
+
+/* ---- editorial pass, phase 2: case cards and the agent's call -------------------------- */
+
+.case-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; }
+.case-card {
+  position: relative; display: grid; gap: 6px; padding: 20px 22px 18px; border-radius: var(--r-md);
+  background: var(--panel); border: 1px solid var(--rule); color: var(--text); text-decoration: none;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 22px 44px -26px rgba(0, 0, 0, 0.9);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.case-card:hover, .case-card:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--rule));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 28px 54px -26px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(226, 184, 92, 0.12);
+}
+.card-id { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: 0.02em; }
+.cap .tag { font-variant-caps: normal; letter-spacing: 0; vertical-align: 0.1em; }  /* tags look the same everywhere */
+
+/* Two layers in one grid cell: the summary, and the agent's main reason behind it. */
+.card-stage { display: grid; margin-top: 10px; min-height: 168px; }
+.card-layer { grid-area: 1 / 1; transition: opacity 0.28s ease, transform 0.32s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.card-back { opacity: 0; transform: translateY(12px); display: grid; align-content: start; gap: 8px; }
+.case-card.has-reason:hover .card-front, .case-card.has-reason:focus-visible .card-front { opacity: 0; transform: translateY(-12px); }
+.case-card.has-reason:hover .card-back, .case-card.has-reason:focus-visible .card-back { opacity: 1; transform: none; }
+.card-reason { margin: 0; font-size: 17px; line-height: 1.45; max-width: 46ch; }
+
+.card-verdict { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.verdict-word {
+  font-family: var(--font-display); font-weight: 900; text-transform: uppercase; color: var(--accent);
+  font-size: clamp(56px, 6vw, 84px); line-height: 0.82; letter-spacing: 0.01em;
+  text-shadow: 0 0 28px rgba(226, 184, 92, 0.28);
+}
+.card-risk, .verdict-risk { display: grid; justify-items: end; gap: 2px; }
+.risk-number { font-family: var(--font-display); font-weight: 800; font-size: 44px; line-height: 0.9; }
+.card-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-top: 14px; color: var(--muted); font-size: 14px; }
+.card-due { margin-top: 10px; }
+
+/* Case page tier 1 */
+.case-call-head { margin-top: 30px; }
+.case-call-head h2 { font-size: clamp(36px, 4.4vw, 64px); }
+.verdict-panel { display: grid; gap: 4px; }
+.verdict-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.verdict-panel .verdict-word { font-size: clamp(72px, 8vw, 128px); }
+.verdict-panel .risk-number { font-size: clamp(48px, 5vw, 72px); }
+.verdict-meta { margin-top: 14px; }
+.case-head .cap { display: block; margin: 2px 0 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card-layer { transition: none; }
+  .case-card.has-reason:hover .card-front, .case-card.has-reason:focus-visible .card-front { transform: none; }
+  .card-back { transform: none; }
+}

@@ -41,6 +41,7 @@
     return el("div", { class: "case-head" },
       el("div", {},
         el("h1", { class: "num", text: d.dispute_id }),
+        DD.caseCaption(d),
         el("div", { class: "facts-line" },
           el("span", { text: DD.reasonLabel(d.reason) }),
           el("span", { class: "num", text: DD.money(d.amount) }),
@@ -78,15 +79,16 @@
         el("strong", { text: `${id} ` }),
         ruleText[id] || "Rule text wasn't recorded for this older recommendation. Run it again to record the rules it uses.")))) : null;
     return [
-      el("section", { class: "panel" },
-        el("h2", { text: "Recommendation" }),
-        el("div", { class: "verdict" },
-          DD.decisionChip(rec),
-          el("span", { class: "score", title: "Likelihood, 0 to 100, that the buyer's claim is valid (you would lose if you defended), based only on the evidence on file" },
-            el("strong", { text: String(rec.risk_score) }), "risk score"),
-          el("span", { class: "meta", text: `Analyzed ${new Date(rec.created_at).toLocaleString()} by ${rec.model}` })),
+      // Tier 1, editorial: the verdict as a huge word, the risk score as a large number, the main reason.
+      el("section", { class: "panel verdict-panel", "aria-label": "Recommendation" },
+        el("div", { class: "verdict-hero" },
+          el("span", { class: "verdict-word", text: rec.decision }),
+          el("span", { class: "verdict-risk", title: "Likelihood, 0 to 100, that the buyer's claim is valid (you would lose if you defended), based only on the evidence on file" },
+            el("span", { class: "risk-number num", text: String(rec.risk_score) }),
+            el("span", { class: "cap", text: "risk score, 0 to 100" }))),
         rec.reasoning && rec.reasoning[0] ? el("p", { class: "main-reason" },
-          el("span", { class: "main-reason-label", text: "Main reason" }), rec.reasoning[0].point) : null),
+          el("span", { class: "main-reason-label", text: "Main reason" }), rec.reasoning[0].point) : null,
+        el("span", { class: "cap verdict-meta", text: `analyzed ${new Date(rec.created_at).toLocaleString()} by ${rec.model}` })),
       el("section", { class: "panel" }, el("h2", { text: "Why" }), reasons, rulesBlock),
       // An accept sends the fixed note shown in the approval panel, so the evidence draft only
       // matters for a defence.
@@ -506,7 +508,12 @@
       el("section", { class: "panel" }, el("h2", { text: "Evidence path" }),
         el("p", { class: "hint", text: "The graph path appears once the agent has a recommendation for this dispute." }))]));
     disposeGraph();
-    root.replaceChildren(header(dispute), band, el("div", { class: "case-grid" }, left, right));
+    const callHead = el("div", { class: "stack-head case-call-head" },
+      el("h2", {}, el("span", { text: "The agent's" }), el("span", { text: "call" })),
+      el("span", { class: "cap", text: decision && decision.status === "ok"
+        ? "What the agent recommends, how strong the buyer's claim looks, and why."
+        : "The agent's recommendation appears here once the analysis has run." }));
+    root.replaceChildren(header(dispute), callHead, band, el("div", { class: "case-grid" }, left, right));
     mountPendingGraph();
   }
 
