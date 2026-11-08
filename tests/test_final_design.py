@@ -268,3 +268,42 @@ def test_annotated_citations_underline_only_cited_facts_and_draw_once():
     assert "io.unobserve(e.target);" in draw and "DD.reducedMotion()" in draw and "drawnOnce" in draw
     assert 'path.setAttribute("pathLength", "1");' in CASE and '"aria-hidden", "true"' in CASE.split("function annotated(", 1)[1][:900]
     assert "stroke: var(--primary-text)" in PHASE4  # blue, not tangerine
+
+
+# --- phase 5: depth shapes, focus, consistency ------------------------------------------------------
+
+POINTER = (STATIC / "pointer.js").read_text(encoding="utf-8")
+PHASE5 = section("final design pass, phase 5")
+
+
+def test_depth_shapes_are_decorative_on_the_shared_loop_and_contrast_safe():
+    shapes = POINTER.split("// ---- floating depth shapes", 1)[1].split("return { enabled", 1)[0]
+    assert 'field.setAttribute("aria-hidden", "true");' in shapes and 'document.querySelectorAll(".page-hero")' in shapes
+    assert "subscribe((dt) => {" in shapes and "ease(depth.off[i], target, dt, 160)" in shapes  # the one shared loop
+    scroll = shapes.split('window.addEventListener("scroll"', 1)[1].split("});", 1)[0]
+    assert "getBoundingClientRect" not in scroll and "kick();" in scroll  # records a number, nothing else
+    assert "var(--primary) 22%, var(--ground)" in PHASE5 and "--splash" not in PHASE5 and "fill: none" in PHASE5
+    assert all(p in shapes for p in ('"folder"', '"card"'))  # case-folder and evidence-card outlines
+    for opacity in re.findall(r'"(?:folder|card)", [-\d]+, [-\d]+, \d+, [\d.]+, ([\d.]+)', shapes):
+        assert float(opacity) <= 1
+
+
+def test_every_removed_outline_has_a_visible_replacement():
+    allowed = {"main:focus": "the skip-link target (tabindex -1), not an interactive control",
+               ".map-node:focus-visible": "its label and hit area draw the focus ring instead"}
+    for sel in re.findall(r"(?m)^([^{}\n]+)\{[^}]*outline: none", CSS):
+        assert sel.strip() in allowed, sel
+    assert ".map-node:focus-visible .mn-text, .map-node:focus-visible .mn-hit { outline: 2px solid var(--focus)" in CSS
+    assert re.search(r"button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible,\s*\[tabindex\]:focus-visible \{ outline: 2px solid var\(--focus\)", CSS)
+    # The ring is drawn 2px outside the control, so it sits on the page or card behind it, never on a blue fill.
+    assert "outline: 2px solid var(--focus); outline-offset: 2px; }" in CSS
+    insets = re.findall(r"(?m)^([^{}\n]+)\{[^}]*outline-offset: -", CSS)
+    assert [s.strip() for s in insets] == [".graph3d-canvas:focus-visible"]  # inset only on the dark 3D scene
+    for surface in ("ground", "ground-deep", "surface", "surface-2"):
+        assert ratio(TOKENS["focus"], TOKENS[surface]) >= 3, surface
+
+
+def test_every_page_counts_waiting_and_with_paypal_with_one_definition():
+    for name in ("overview.js", "queue.js", "insights.js", "casemap.js"):
+        assert "DD.groupDisputes(" in (STATIC / name).read_text(encoding="utf-8"), name
+    assert 'waiting: pick("WAITING_FOR_SELLER_RESPONSE"), withPayPal: pick("UNDER_REVIEW")' in COMMON

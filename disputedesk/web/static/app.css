@@ -1314,3 +1314,17 @@ main button.secondary.small { font-size: 11px; padding: 6px 10px; }
   .flap.flip { animation: none; }
   .annot .annot-line path { stroke-dashoffset: 0; transition: none; }
 }
+
+/* ---- final design pass, phase 5: floating depth shapes, consistency ----------------------------- */
+/* Case-folder and evidence-card outlines behind the page heroes: decorative, aria-hidden, no data.
+   Their stroke is the same faint blue tint as the magnet lines, contrast-tested under hero text. */
+.depth-shapes { position: absolute; inset: -20px 0 0 0; z-index: -1; pointer-events: none; }
+.depth-shape { position: absolute; display: block; transform: rotate(var(--rot, 0deg)); will-change: transform; }
+.depth-shape svg { display: block; width: 100%; height: auto; overflow: visible; }
+.depth-shape path, .depth-shape rect { fill: none; stroke: color-mix(in srgb, var(--primary) 22%, var(--ground)); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+@media (max-width: 900px) {
+  .depth-shape:nth-child(n+4) { display: none; }
+  .depth-shape { max-width: 22vw; }
+}
+/* Consistency: empty states read the same on every page. */
+.state p, .empty-note { color: var(--muted); font-size: 14.5px; max-width: 64ch; }

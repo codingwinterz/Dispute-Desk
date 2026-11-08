@@ -85,3 +85,12 @@ def test_queue_wording_is_unchanged():
     for words in ("waiting on you. ", "with PayPal. ", "waiting on the buyer. ", "Next response due in ",
                   "still being analyzed.", "Every waiting dispute has a recommendation."):
         assert words in summary, words
+
+
+def test_dry_run_is_unchanged_and_read_only():
+    panel = between(CASE, "function approvePanel(d, submit)", "function openConfirm(")
+    assert 'const dryButton = el("button", { class: "secondary", type: "button", text: "Show the exact request (dry run)" });' in panel
+    assert 'fetch(`/api/submissions/${encodeURIComponent(d.dispute_id)}/dry-run`, { cache: "no-store" })' in panel
+    dry = panel.split("dryButton.addEventListener", 1)[1].split("});", 1)[0]
+    assert "method" not in dry and "POST" not in dry
+    assert "Built from the last stored state of this dispute. Nothing was sent" in panel
