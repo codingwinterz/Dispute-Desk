@@ -103,3 +103,58 @@ def test_new_pairings_pass_contrast():
              ("primary", "ground", 3.5)]             # eyebrow rule, row edges
     for fg, bg, minimum in pairs:
         assert ratio(TOKENS[fg], TOKENS[bg]) >= minimum, (fg, bg)
+
+
+# --- phase 2: insights ---------------------------------------------------------------------------
+
+INSIGHTS = (STATIC / "insights.js").read_text(encoding="utf-8")
+INSIGHTS_HTML = (WEB / "insights.html").read_text(encoding="utf-8")
+PHASE2 = section("final design pass, phase 2")
+
+
+def test_insights_uses_the_shared_hero():
+    assert '<header class="page-hero">' in INSIGHTS_HTML and 'id="insights-eyebrow"' in INSIGHTS_HTML
+    assert 'DD.eyebrow("Insights")' in INSIGHTS and "DD.statChip(" in INSIGHTS and "DD.groupDisputes(rows)" in INSIGHTS
+
+
+def test_deadline_runway_plots_each_waiting_dispute_on_the_shared_clock():
+    rw = INSIGHTS.split("function runway(groups)", 1)[1].split("// ---- risk ruler", 1)[0]
+    assert "const now = DD.clock();" in rw and "Date.now()" not in INSIGHTS
+    assert "groups.waiting.filter((d) => d.seller_response_due_date)" in rw
+    for part in ("d.dispute_id", "verdictChip(d)", "DD.countdown(d.seller_response_due_date)", '"data-due": d.seller_response_due_date'):
+        assert part in rw, part  # ID, verdict and a live countdown on every marker
+    assert 'el("ol", { class: "rw-markers" }' in rw and "href: caseHref(d)" in rw  # a list of links
+    assert "nothing to plot" in rw  # a real empty state
+
+
+def test_risk_ruler_plots_every_decided_dispute_with_its_caption():
+    rl = INSIGHTS.split("function ruler(rows)", 1)[1].split("function hero(", 1)[0]
+    assert "Higher means the buyer is more likely right." in rl
+    assert "d.decision.risk_score" in rl and "shortId(d.dispute_id)" in rl
+    assert "[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]" in rl
+    assert "No recommendations yet, so there are no risk scores to plot." in rl
+
+
+def test_tiles_count_from_stored_rows_only():
+    tl = INSIGHTS.split("function tiles(rows, groups)", 1)[1].split("// ---- deadline runway", 1)[0]
+    assert "DD.sumAmounts(groups.waiting)" in tl and 'waitingTotal || "None"' in tl
+    assert 'd.decision.decision === "DEFEND"' in tl and "split-bar" in tl
+    assert "DD.reasonLabel(r)" in tl
+
+
+def test_lanes_keep_labels_apart_and_narrow_screens_get_a_list():
+    assert "function lanes(items, gap)" in INSIGHTS
+    assert "lanes(dated.map(" in INSIGHTS and ", 26)" in INSIGHTS  # runway cards: 190px at ~760px wide
+    assert ".rw-card {" in PHASE2 and "width: 190px" in PHASE2
+    narrow = PHASE2.split("@media (max-width: 760px)", 1)[1]
+    assert ".rw-axis, .rw-soon, .rw-now, .rw-pin { display: none; }" in narrow
+
+
+def test_insights_colours_stay_in_budget_and_pass_contrast():
+    assert "--splash" not in PHASE2  # countdowns get their tangerine from the shared [data-due] rule
+    overdue = re.search(r"\.rw-marker\.overdue \.rw-pin[^{]*\{([^}]*)\}", PHASE2).group(1)
+    assert "var(--danger)" in overdue  # red only for overdue, and the card says "Overdue by"
+    for fg, bg, minimum in [("text", "surface-2", 4.5), ("muted", "surface-2", 4.5), ("primary-text", "surface-2", 4.5),
+                            ("muted", "surface", 4.5), ("primary-text", "surface", 4.5), ("control-edge", "surface", 3.5),
+                            ("primary", "surface", 3.5), ("danger", "surface", 3.5)]:
+        assert ratio(TOKENS[fg], TOKENS[bg]) >= minimum, (fg, bg)

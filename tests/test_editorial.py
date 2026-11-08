@@ -141,9 +141,12 @@ def test_case_page_tier_one_is_editorial_and_leaves_approval_code_alone():
 
 def test_insights_charts_open_with_stacked_headers_and_reveal():
     js = (WEB / "static" / "insights.js").read_text(encoding="utf-8")
-    for title in ('["The agent\'s", "call"]', '["Risk", "scores"]', '["Why buyers", "disputed"]', '["Time", "left"]'):
+    # The bar charts became a deadline runway, a risk ruler and big-number tiles (final design pass).
+    for title in ('head("Deadline", "runway"', 'head("Risk", "ruler"'):
         assert title in js
-    assert "DD.reveal([rec, risk, byReason, urgency])" in js
+    for tile in ('"The agent\'s call"', '"Why buyers disputed"', '"In dispute, waiting on you"'):
+        assert tile in js
+    assert "DD.revealStaggered(parts)" in js
 
 
 def test_activity_and_records_reveal_and_restyle():

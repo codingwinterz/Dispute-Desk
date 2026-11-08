@@ -1,5 +1,9 @@
-// Insights: totals and splits counted from GET /api/disputes. No estimates, no projections.
-// Charts are single-series horizontal bars in one neutral hue, every bar labeled with its value.
+// Insights: counted from GET /api/disputes only. No estimates, no projections.
+// - Big-number tiles: amount in dispute, the agent's Defend/Accept split, why buyers disputed.
+// - Deadline runway: one marker per dispute waiting on you, placed by its due date on DD.clock()
+//   (frozen at the recording in demo mode), with its ID, verdict and live countdown.
+// - Risk ruler: 0 to 100, each decided dispute plotted at its score and labelled.
+// Both charts are ordered lists of links, so screen readers get the same data in a sensible order.
 "use strict";
 
 (() => {
@@ -7,82 +11,177 @@
   DD.renderNav("insights");
 
   const POLL_MS = 10000;
+  const DAY = 86400 * 1000, H72 = 72 * 3600 * 1000;
   const root = document.getElementById("insights");
   const banner = document.getElementById("error");
   let lastKey = "";
 
-  const amountOf = (d) => (d.amount && d.amount.value !== undefined ? Number(d.amount.value) : 0);
-  const currencies = (rows) => [...new Set(rows.map((d) => (d.amount && d.amount.currency_code) || "USD"))];
+  const decided = (d) => Boolean(d.decision && d.decision.status === "ok");
+  const verdictOf = (d) => (decided(d) ? d.decision.decision : null);
+  const shortId = (id) => String(id).split("-").slice(0, 3).join("-");
+  const caseHref = (d) => `/case/${encodeURIComponent(d.dispute_id)}`;
 
-  function money(total, rows) {
-    const cur = currencies(rows);
-    // Only add amounts in one currency; mixed currencies are shown as counts only.
-    return cur.length <= 1 ? DD.money({ value: total.toFixed(2), currency_code: cur[0] || "USD" }) : "mixed currencies";
+  function head(first, second, note) {
+    return el("div", { class: "stack-head" },
+      el("h2", {}, el("span", { text: first }), second ? el("span", { text: second }) : null),
+      note ? el("span", { class: "cap", text: note }) : null);
   }
 
-  /** One chart: [{label, count, amountRows}] as horizontal bars scaled to the largest count. */
-  function bars(title, note, items, { showAmount = true } = {}) {
-    const max = Math.max(1, ...items.map((i) => i.count));
-    const [first, second] = Array.isArray(title) ? title : [title, ""];
-    return el("section", { class: "chart" },
-      el("div", { class: "stack-head" },
-        el("h2", {}, el("span", { text: first }), second ? el("span", { text: second }) : null),
-        note ? el("span", { class: "cap", text: note }) : null),
-      el("ul", { class: "bars", role: "list" }, ...items.map((i) => {
-        const total = i.rows.reduce((s, d) => s + amountOf(d), 0);
-        const value = `${i.count} ${i.count === 1 ? "dispute" : "disputes"}${showAmount && i.count ? `, ${money(total, i.rows)}` : ""}`;
-        return el("li", { class: "bar-row", title: `${i.label}: ${value}` },
-          el("span", { class: "bar-label", text: i.label }),
-          el("span", { class: "bar-track", "aria-hidden": "true" },
-            el("span", { class: "bar-fill", style: `width:${(i.count / max) * 100}%` })),
-          el("span", { class: "bar-value num", text: value }));
+  function verdictChip(d) {
+    const v = verdictOf(d);
+    return v ? el("span", { class: `chip ${v.toLowerCase()}`, text: v === "DEFEND" ? "Defend" : "Accept" })
+      : el("span", { class: "chip pending", text: "No recommendation yet" });
+  }
+
+  // Greedy lanes: a marker goes in the first lane whose last marker is at least `gap` percent to the left.
+  function lanes(items, gap) {
+    const ends = [];
+    return items.map((it) => {
+      let lane = ends.findIndex((x) => it.x - x >= gap);
+      if (lane < 0) { lane = ends.length; ends.push(-Infinity); }
+      ends[lane] = it.x;
+      return { ...it, lane };
+    });
+  }
+  const edgeClass = (x) => (x <= 25 ? " at-start" : x >= 75 ? " at-end" : "");  // labels near an edge grow inwards
+
+  // ---- big-number tiles --------------------------------------------------------------------------
+  function tiles(rows, groups) {
+    const waitingTotal = DD.sumAmounts(groups.waiting), allTotal = DD.sumAmounts(rows);
+    const amount = el("article", { class: "tile" },
+      el("span", { class: "tile-label", text: "In dispute, waiting on you" }),
+      el("span", { class: "tile-number num", text: waitingTotal || "None" }),
+      el("span", { class: "tile-note", text: groups.waiting.length
+        ? `Across ${groups.waiting.length} ${groups.waiting.length === 1 ? "dispute" : "disputes"}. ${allTotal} across all ${rows.length} stored.`
+        : `Nothing waiting on you. ${allTotal ? `${allTotal} across all ${rows.length} stored.` : ""}` }));
+
+    const ok = rows.filter(decided);
+    const defend = ok.filter((d) => d.decision.decision === "DEFEND").length, accept = ok.length - defend;
+    const pending = rows.length - ok.length;
+    const split = el("article", { class: "tile" },
+      el("span", { class: "tile-label", text: "The agent's call" }),
+      el("span", { class: "tile-split" },
+        el("span", { class: "tile-number num", text: String(defend) }), el("span", { class: "tile-unit", text: "defend" }),
+        el("span", { class: "tile-number num", text: String(accept) }), el("span", { class: "tile-unit", text: "accept" })),
+      ok.length ? el("span", { class: "split-bar", role: "img", "aria-label": `${defend} defend, ${accept} accept` },
+        el("span", { class: "split-defend", style: `flex:${defend}` }), el("span", { class: "split-accept", style: `flex:${accept}` })) : null,
+      el("span", { class: "tile-note", text: ok.length
+        ? `Every recommendation on file${pending ? `; ${pending} still being analyzed` : ""}.` : "No recommendations yet." }));
+
+    const reasons = [...new Set(rows.map((d) => d.reason))].sort();
+    const why = el("article", { class: "tile" },
+      el("span", { class: "tile-label", text: "Why buyers disputed" }),
+      el("ul", { class: "tile-list" }, ...reasons.map((r) => {
+        const n = rows.filter((d) => d.reason === r).length;
+        return el("li", {}, el("span", { class: "tile-count num", text: String(n) }), el("span", { text: DD.reasonLabel(r) }));
       })));
+    return el("section", { class: "tiles", "aria-label": "Totals" }, amount, split, why);
+  }
+
+  // ---- deadline runway -------------------------------------------------------------------------------
+  function runway(groups) {
+    const now = DD.clock();  // the recording's time in demo mode
+    const dated = groups.waiting.filter((d) => d.seller_response_due_date).sort((a, b) => Date.parse(a.seller_response_due_date) - Date.parse(b.seller_response_due_date));
+    const asOf = DD.mode.demo ? ` As of the recording, ${DD.recordedLabel()}.` : "";
+    const others = [
+      groups.withPayPal.length ? `${groups.withPayPal.length} With PayPal` : "",
+      groups.withBuyer.length ? `${groups.withBuyer.length} waiting on the buyer` : "",
+    ].filter(Boolean).join(", ");
+    const section = el("section", { class: "chart" },
+      head("Deadline", "runway", `Every dispute waiting on you, placed by its due date.${asOf}`));
+    if (!dated.length) {
+      section.append(el("p", { class: "empty-note", text: `Nothing waiting on you has a deadline, so there is nothing to plot.${others ? ` (${others}: no deadline to answer.)` : ""}` }));
+      return section;
+    }
+    const last = Math.max(...dated.map((d) => Date.parse(d.seller_response_due_date)));
+    const start = Math.min(now, ...dated.map((d) => Date.parse(d.seller_response_due_date)));
+    const end = Math.ceil((last + DAY / 2) / DAY) * DAY;  // round up past the last deadline
+    const pos = (t) => ((t - start) / (end - start)) * 100;
+    const days = Math.round((end - start) / DAY);
+    const step = days > 21 ? 7 : days > 10 ? 2 : 1;
+    const ticks = [];
+    for (let t = Math.ceil(start / DAY) * DAY; t <= end; t += step * DAY) ticks.push(t);
+
+    const placed = lanes(dated.map((d) => ({ d, x: pos(Date.parse(d.seller_response_due_date)) })), 26);
+    const laneCount = Math.max(1, ...placed.map((p) => p.lane + 1));
+    const soonEnd = Math.min(100, pos(now + H72));
+    const chart = el("div", { class: "runway", style: `--lanes:${laneCount}` },
+      el("div", { class: "rw-soon", style: `left:${pos(now).toFixed(2)}%;width:${Math.max(0, soonEnd - pos(now)).toFixed(2)}%`, "aria-hidden": "true" },
+        el("span", { text: "Next 72 hours" })),
+      el("div", { class: "rw-axis", "aria-hidden": "true" },
+        ...ticks.map((t) => el("span", { class: "rw-tick", style: `left:${pos(t).toFixed(2)}%` },
+          el("span", { text: new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" }) })))),
+      el("span", { class: "rw-now", style: `left:${pos(now).toFixed(2)}%`, "aria-hidden": "true" }, el("span", { text: DD.mode.demo ? "Recorded" : "Now" })),
+      el("ol", { class: "rw-markers" }, ...placed.map(({ d, x, lane }) => {
+        const c = DD.countdown(d.seller_response_due_date);
+        const overdue = DD.isOverdue(c);
+        return el("li", { class: `rw-marker${overdue ? " overdue" : ""}${edgeClass(x)}`, style: `left:${x.toFixed(2)}%;--lane:${lane}` },
+          el("span", { class: "rw-pin", "aria-hidden": "true" }),
+          el("a", { class: "rw-card", href: caseHref(d) },
+            el("span", { class: "rw-id num", text: d.dispute_id }),
+            el("span", { class: "rw-meta" }, verdictChip(d),
+              el("span", { class: "rw-due", "data-due": d.seller_response_due_date },
+                el("span", { class: "sr-only", text: "time left: " }), el("span", { class: "cd-main", text: c.text }), DD.dueSoonChip(c))),
+            el("span", { class: "rw-date", text: `Due ${DD.dueDate(d.seller_response_due_date)}` })));
+      })));
+    section.append(chart);
+    if (others) section.append(el("p", { class: "empty-note", text: `Not on the runway: ${others}, with no deadline for you to answer.` }));
+    return section;
+  }
+
+  // ---- risk ruler -------------------------------------------------------------------------------------
+  function ruler(rows) {
+    const ok = rows.filter(decided).sort((a, b) => a.decision.risk_score - b.decision.risk_score);
+    const section = el("section", { class: "chart" },
+      head("Risk", "ruler", "How likely each buyer's claim is to be valid, from the evidence on file. Higher means the buyer is more likely right."));
+    if (!ok.length) {
+      section.append(el("p", { class: "empty-note", text: "No recommendations yet, so there are no risk scores to plot." }));
+      return section;
+    }
+    const placed = lanes(ok.map((d) => ({ d, x: Math.max(0, Math.min(100, d.decision.risk_score)) })), 14);
+    const laneCount = Math.max(1, ...placed.map((p) => p.lane + 1));
+    section.append(el("div", { class: "ruler", style: `--lanes:${laneCount}` },
+      el("div", { class: "rl-bands", "aria-hidden": "true" },
+        el("span", { class: "rl-band low", style: "left:0;width:30%" }, el("span", { text: "Low, 0 to 29" })),
+        el("span", { class: "rl-band mid", style: "left:30%;width:40%" }, el("span", { text: "Medium, 30 to 69" })),
+        el("span", { class: "rl-band high", style: "left:70%;width:30%" }, el("span", { text: "High, 70 to 100" }))),
+      el("div", { class: "rl-axis", "aria-hidden": "true" },
+        ...[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((v) => el("span", { class: "rl-tick", style: `left:${v}%` }, el("span", { text: String(v) })))),
+      el("ol", { class: "rl-markers" }, ...placed.map(({ d, x, lane }) =>
+        el("li", { class: `rl-marker is-${d.decision.decision.toLowerCase()}${edgeClass(x)}`, style: `left:${x}%;--lane:${lane}` },
+          el("span", { class: "rl-dot", "aria-hidden": "true" }),
+          el("a", { class: "rl-label", href: caseHref(d), title: d.dispute_id },
+            el("span", { class: "rl-id num", text: shortId(d.dispute_id) }),
+            el("span", { class: "rl-score num" }, el("span", { class: "sr-only", text: ", risk " }), String(d.decision.risk_score)),
+            el("span", { class: "sr-only", text: `, ${d.decision.decision.toLowerCase()}` })))))));
+    return section;
+  }
+
+  function hero(rows, groups) {
+    document.getElementById("insights-eyebrow").replaceChildren(...DD.eyebrow("Insights"));
+    document.getElementById("scope").textContent =
+      `Counted from the ${rows.length} ${rows.length === 1 ? "dispute" : "disputes"} in the local store. All dispute records come from the PayPal sandbox.`;
+    const chips = [
+      DD.statChip({ label: "disputes stored", value: String(rows.length) }),
+      DD.statChip({ label: "waiting on you", value: String(groups.waiting.length), tone: groups.waiting.length ? "waiting" : "" }),
+      DD.statChip({ label: "With PayPal", value: String(groups.withPayPal.length) }),
+    ];
+    if (groups.withBuyer.length) chips.push(DD.statChip({ label: "waiting on the buyer", value: String(groups.withBuyer.length) }));
+    document.getElementById("insights-stats").replaceChildren(...chips);
   }
 
   function render(rows) {
     if (!rows.length) {
+      document.getElementById("insights-stats").replaceChildren();
       root.replaceChildren(el("div", { class: "state" },
         el("p", { text: "No disputes yet, so there is nothing to count. Insights fill in as disputes arrive." })));
       return;
     }
-    document.getElementById("scope").textContent =
-      `Counted from the ${rows.length} ${rows.length === 1 ? "dispute" : "disputes"} in the local store. All dispute records come from the PayPal sandbox.`;
-    const ok = rows.filter((d) => d.decision && d.decision.status === "ok");
-
-    const rec = bars(["The agent's", "call"], "What the agent recommended for every dispute.", [
-      { label: "Defend", count: ok.filter((d) => d.decision.decision === "DEFEND").length, rows: ok.filter((d) => d.decision.decision === "DEFEND") },
-      { label: "Accept", count: ok.filter((d) => d.decision.decision === "ACCEPT").length, rows: ok.filter((d) => d.decision.decision === "ACCEPT") },
-      { label: "Pending or failed", count: rows.length - ok.length, rows: rows.filter((d) => !ok.includes(d)) },
-    ]);
-
-    const reasons = [...new Set(rows.map((d) => d.reason))].sort();
-    const byReason = bars(["Why buyers", "disputed"], "The reasons buyers gave when they opened a dispute.",
-      reasons.map((r) => ({ label: DD.reasonLabel(r), count: rows.filter((d) => d.reason === r).length, rows: rows.filter((d) => d.reason === r) })));
-
-    const bucket = (lo, hi) => ok.filter((d) => d.decision.risk_score >= lo && d.decision.risk_score <= hi);
-    const risk = bars(["Risk", "scores"],
-      "How likely each buyer's claim is to be valid, from the evidence on file. Higher means the buyer is more likely right.", [
-        { label: "Low (0 to 29)", count: bucket(0, 29).length, rows: bucket(0, 29) },
-        { label: "Medium (30 to 69)", count: bucket(30, 69).length, rows: bucket(30, 69) },
-        { label: "High (70 to 100)", count: bucket(70, 100).length, rows: bucket(70, 100) },
-      ]);
-
-    const now = DD.clock(), H = 3600 * 1000;  // the recording's time in demo mode
     const groups = DD.groupDisputes(rows);
-    const due = (d) => Date.parse(d.seller_response_due_date);
-    const within = (lo, hi) => groups.waiting.filter((d) => due(d) - now >= lo && due(d) - now < hi);
-    const asOf = DD.mode.demo ? ` As of the recording, ${DD.recordedLabel()}.` : "";
-    const urgency = bars(["Time", "left"], `Time left on each dispute waiting on you, and who has the rest.${asOf}`, [
-      { label: "Overdue", count: within(-Infinity, 0).length, rows: within(-Infinity, 0) },
-      { label: "Within 72 hours", count: within(0, 72 * H).length, rows: within(0, 72 * H) },
-      { label: "3 to 7 days", count: within(72 * H, 168 * H).length, rows: within(72 * H, 168 * H) },
-      { label: "More than 7 days", count: within(168 * H, Infinity).length, rows: within(168 * H, Infinity) },
-      { label: "With PayPal", count: groups.withPayPal.length, rows: groups.withPayPal },
-      ...(groups.withBuyer.length ? [{ label: "Waiting on the buyer", count: groups.withBuyer.length, rows: groups.withBuyer }] : []),
-    ]);
-
-    root.replaceChildren(rec, risk, byReason, urgency);
-    DD.reveal([rec, risk, byReason, urgency]);
+    hero(rows, groups);
+    const parts = [tiles(rows, groups), runway(groups), ruler(rows)];
+    root.replaceChildren(...parts);
+    DD.revealStaggered(parts);
   }
 
   async function refresh() {
@@ -92,9 +191,10 @@
       if (!resp.ok) throw new Error(`The server answered HTTP ${resp.status}. Retrying every 10 seconds.`);
       const body = await resp.json();
       DD.live(true);
-      await DD.modeReady;  // demo mode decides which clock the deadline chart uses
+      await DD.modeReady;  // demo mode decides which clock the runway uses
       banner.hidden = true;
-      const key = JSON.stringify(body);
+      // Live mode: re-place the runway once a minute as time moves on (demo time is frozen).
+      const key = JSON.stringify(body) + (DD.mode.demo ? "" : Math.floor(DD.clock() / 60000));
       if (key === lastKey) return;
       lastKey = key;
       render(body.disputes || []);
