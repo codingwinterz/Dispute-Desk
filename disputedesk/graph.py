@@ -7,6 +7,7 @@ Edges:
   (Customer)-[:INITIATED]->(Transaction)-[:HAS_DISPUTE]->(Dispute)
   (Transaction)-[:FULFILLED_BY]->(Shipment)
   (Transaction)-[:LOGGED_FROM]->(Telemetry)
+  (Transaction)-[:HAS_EVENT]->(MerchantEvent {id, kind, status, location, time, label, source = "seeded"})
 
 PayPal-sourced nodes come from the stored GET /v1/customer/disputes/{id} response:
 https://developer.paypal.com/docs/api/customer-disputes/v1/#disputes_get
@@ -23,6 +24,8 @@ PAYPAL = "paypal"
 SEEDED = "seeded"
 # Start of the fact text for each linked dispute (the decision step checks for it).
 LINKED_PREFIX = "Linked dispute "
+# Every merchant event imported in the sandbox carries this label (and source = "seeded").
+EVENT_LABEL = "simulated merchant event"
 
 
 class GraphLike(Protocol):
@@ -65,7 +68,11 @@ RETURN
   collect(DISTINCT CASE WHEN od IS NULL THEN NULL ELSE {
     id: od.id, reason: od.reason, status: od.status, source: od.source, transaction_id: other_t.id,
     via: CASE WHEN ot.device_hash = tel.device_hash THEN 'device_hash' ELSE 'ip' END
-  } END) AS linked
+  } END) AS linked,
+  [(t)-[:HAS_EVENT]->(ev:MerchantEvent) | {
+    id: ev.id, kind: ev.kind, status: ev.status, location: ev.location, time: ev.time, carrier: ev.carrier,
+    signed_by_buyer: ev.signed_by_buyer, note: ev.note, label: ev.label, source: ev.source
+  }] AS events
 LIMIT 1
 """
 
@@ -176,6 +183,16 @@ class GraphStore:
         if past.get("telemetry"):
             self.attach_telemetry(past["transaction_id"], past["telemetry"])
 
+    def add_merchant_event(self, txn_id: str, event: dict[str, Any]) -> None:
+        """A merchant event (for example a carrier scan) on a transaction that already exists in the
+        graph. Always source = "seeded" and labelled as a simulated merchant event."""
+        props = {k: v for k, v in event.items() if k != "id" and v is not None} | {"label": EVENT_LABEL, "source": SEEDED}
+        self._g.query(
+            "MATCH (t:Transaction {id: $tid}) MERGE (e:MerchantEvent {id: $eid}) SET e += $props "
+            "MERGE (t)-[:HAS_EVENT]->(e)",
+            {"tid": txn_id, "eid": event["id"], "props": props},
+        )
+
     def reset(self) -> None:
         """Delete the whole disputedesk graph (local FalkorDB only)."""
         try:
@@ -202,6 +219,9 @@ def parse_context_row(row: list[Any]) -> dict[str, Any]:
         # An unmatched OPTIONAL MATCH gives all-NULL columns.
         ctx[group] = values if values.get("id") or values.get("payer_id") else None
     ctx["linked_disputes"] = [dict(x) for x in row[i] or []]
+    # Merchant events (a later column; older snapshots and rows simply have none).
+    events = row[i + 1] if len(row) > i + 1 else []
+    ctx["events"] = sorted((dict(x) for x in events or []), key=lambda e: str(e.get("time") or ""))
     return ctx
 
 
@@ -240,6 +260,18 @@ def context_to_facts(ctx: dict[str, Any]) -> list[dict[str, str]]:
         facts.append((detail + ".", s["source"], "shipment"))
     else:
         facts.append(("No shipment record is on file for this transaction.", SEEDED, "shipment"))
+    for ev in ctx.get("events") or []:
+        detail = (f"Simulated merchant event {ev['id']} ({str(ev.get('kind') or 'event').replace('_', ' ')}): "
+                  f"{('carrier ' + ev['carrier'] + ' reported') if ev.get('carrier') else 'reported'} status {ev.get('status')}")
+        if ev.get("location"):
+            detail += f" at {ev['location']}"
+        if ev.get("time"):
+            detail += f" on {ev['time']}"
+        if ev.get("signed_by_buyer") is not None:
+            detail += f", signed by buyer: {'yes' if ev['signed_by_buyer'] else 'no'}"
+        if ev.get("note"):
+            detail += f". Note: {ev['note']}"
+        facts.append((detail + ".", ev.get("source") or SEEDED, "shipment"))
     if tel:
         facts.append((f"Checkout telemetry {tel['id']}: IP {tel['ip']} (geolocated {tel['geo']}), "
                       f"device hash {tel['device_hash']}.", tel["source"], "telemetry"))

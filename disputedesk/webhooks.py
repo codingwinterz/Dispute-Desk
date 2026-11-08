@@ -37,6 +37,7 @@ from disputedesk.decision_store import DecisionStore
 from disputedesk.demo import DEMO_MESSAGE, SNAPSHOT_PATH, load_snapshot, read_snapshot
 from disputedesk.dispute_store import DisputeStore, safe_filename
 from disputedesk.drafts import DraftError, DraftStore, effective_draft
+from disputedesk.merchant_events import MerchantEventStore
 from disputedesk.merchant_records import MerchantRecordStore, records_view
 from disputedesk.disputes import DisputesClient
 from disputedesk.events import DisputeDetected, EventBus
@@ -166,6 +167,7 @@ def create_app(
     demo_dir: Path | None = None
     demo_stores: list[Any] = []  # closed at shutdown before the temporary folder is removed
     merchant_store: MerchantRecordStore | None = None
+    event_store: MerchantEventStore | None = None
     if demo:
         snapshot = read_snapshot(Path(os.getenv("DEMO_SNAPSHOT") or SNAPSHOT_PATH))
         demo_dir = Path(tempfile.mkdtemp(prefix="disputedesk-demo-"))
@@ -175,8 +177,9 @@ def create_app(
         draft_store = DraftStore(dispute_store.path)
         submissions = SubmissionStore(dispute_store.path)  # creates its tables before loading
         merchant_store = MerchantRecordStore(dispute_store.path)
+        event_store = MerchantEventStore(dispute_store.path)  # empty: the snapshot has no merchant events
         load_snapshot(snapshot, dispute_store.path)
-        demo_stores = [dispute_store, decision_store, policy_store, draft_store, submissions, merchant_store]
+        demo_stores = [dispute_store, decision_store, policy_store, draft_store, submissions, merchant_store, event_store]
         submitter = Submitter(dispute_store, decision_store, draft_store, submissions, client=None)
         store = EventStore(demo_dir / "logs")
         verifier = verifier or _DemoVerifier()  # never called: the middleware refuses every write
@@ -200,6 +203,8 @@ def create_app(
     decision_store = decision_store or DecisionStore(dispute_store.path)
     # Read-only here (scripts import the records). Demo mode already opened one on its temporary file.
     merchant_store = merchant_store or MerchantRecordStore(dispute_store.path)
+    # Read-only here too: scripts/merchant_event.py imports events.
+    event_store = event_store or MerchantEventStore(dispute_store.path)
     policy_store = policy_store or PolicyStore(dispute_store.path)
     draft_store = draft_store or DraftStore(dispute_store.path)
     bus = bus or EventBus()
@@ -314,8 +319,11 @@ def create_app(
         decision = await run_in_threadpool(decision_store.get, dispute_id)
         saved = await run_in_threadpool(draft_store.get, dispute_id)
         check = await run_in_threadpool(submitter.check, dispute_id)
+        history = await run_in_threadpool(decision_store.history, dispute_id)
+        events = await run_in_threadpool(event_store.for_dispute, dispute_id)
         return JSONResponse({"dispute": dispute, "decision": _with_fact_refs(decision),
-                             "draft": effective_draft(saved, decision), "submit": check})
+                             "draft": effective_draft(saved, decision), "submit": check,
+                             "history": history, "events": events})
 
     # --- approved responses to PayPal (the only PayPal writes) ------------------------
 
