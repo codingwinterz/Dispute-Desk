@@ -3,6 +3,49 @@
 An AI agent that decides whether to defend or settle PayPal disputes.
 This branch (`sandbox-spike`) only proves that the real PayPal sandbox dispute flow works.
 
+## Quick start: demo mode (no accounts, no keys)
+
+Needs Python 3.12 and git. Demo mode serves recorded sandbox data from `data/demo_snapshot.json`; it
+makes no PayPal, Gemini or FalkorDB calls and every write (including Approve) is disabled.
+
+```sh
+git clone https://github.com/codingwinterz/Dispute-Desk.git && cd Dispute-Desk && git checkout sandbox-spike
+py -3.12 -m venv .venv && .venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python scripts/demo.py
+```
+
+Then open http://127.0.0.1:8000/. (macOS/Linux: `python3.12 -m venv .venv`, then `.venv/bin/python`.)
+The top bar shows **Demo data**. Buyer and merchant identifiers in the snapshot are pseudonymised.
+
+## Full mode (your own PayPal sandbox)
+
+Needs Python 3.12, Docker, a PayPal sandbox REST app and a Gemini API key. Judges and reviewers use
+their own sandbox keys; nothing in this repository is a live credential.
+
+```sh
+copy .env.example .env                                # fill in the four values (cp on macOS/Linux)
+docker compose up -d falkordb                         # graph database on 127.0.0.1:6379
+.venv\Scripts\python scripts/seed_graph.py            # merchant context (after the first disputes arrive)
+.venv\Scripts\python scripts/start.py                 # checks the setup, then starts the app
+```
+
+`scripts/start.py` checks the Python version, dependencies, `.env` (present, UTF-8, parseable, all four
+keys set) and FalkorDB, and prints each problem with the command that fixes it instead of a stack
+trace. Open disputes in the sandbox as described in *Running the sandbox check* below; the poller
+picks them up within `POLL_SECONDS`.
+
+### Sandbox limits
+
+- **Detection is by polling.** No `CUSTOMER.DISPUTE.*` webhook has been delivered by the sandbox so
+  far, so the poller (`GET /v1/customer/disputes`) is the primary detector; the webhook receiver stays
+  on as a second source.
+- **No partial offers at the chargeback stage.** Offers (`make-offer`) are only accepted while a
+  dispute is in the inquiry stage; the recorded disputes are all chargebacks, so the choices are to
+  provide evidence or accept the claim.
+- **Disputes are opened by hand.** Creating one through the API needs a scope only a PayPal account
+  manager can grant.
+- **Shipments and devices are simulated** (see below); in production your store supplies them.
+
 ## What is real vs seeded
 
 | Data | Source |
@@ -36,17 +79,15 @@ Sandbox only. There are no live credentials and no live base URL anywhere in thi
 - `scripts/seed_graph.py`, `scripts/analyze.py`: seed the graph; run decisions from the CLI
 - `tests/`: unit tests with mocked HTTP
 
-## Setup
+## Setup details
 
-Python 3.12 (LiteLLM's native dependencies have no wheels for 3.15 yet) and Docker.
+Python 3.12 (LiteLLM's native dependencies have no wheels for 3.15 yet). FalkorDB runs from
+`docker-compose.yml` (`falkordb/falkordb:6.0.3`, bound to 127.0.0.1). Run the tests with
+`.venv\Scripts\python -m pytest -q`; they mock every PayPal, Gemini and FalkorDB call.
 
-```sh
-docker run -d --name falkordb -p 6379:6379 falkordb/falkordb
-py -3.12 -m venv .venv
-.venv/Scripts/python -m pip install -r requirements.txt   # Windows
-cp .env.example .env    # then fill in the values; never commit .env
-.venv/Scripts/python -m pytest -q
-```
+To refresh the demo snapshot from your own local store: `.venv\Scripts\python scripts/export_demo.py`.
+It keeps only what the dashboard shows, pseudonymises identifiers and refuses to write the file if an
+email, original identifier or token-like string would remain.
 
 ## Running the sandbox check
 
