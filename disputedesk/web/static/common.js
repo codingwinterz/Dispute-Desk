@@ -215,6 +215,10 @@ const DD = (() => {
   // stat chips. Pages own their headline and sentence; these helpers build the eyebrow and the chips.
   function eyebrow(section) {
     const source = mode.demo ? `recorded sandbox data, ${recordedLabel().split(",")[0]}` : "live from the PayPal sandbox";
+    return eyebrowWith(section, source);
+  }
+  // The same eyebrow with a page's own source wording (e.g. Merchant records, which are simulated).
+  function eyebrowWith(section, source) {
     return [el("span", {}, section, el("span", { class: "sep", text: "." }), source)];  // one item beside the rule
   }
   /** One stat chip. value: string or node; note: optional string or node; tone: "" | "waiting" | "overdue". */
@@ -383,6 +387,6 @@ const DD = (() => {
       el("span", { text: String(score) }), bar);
   }
 
-  return { el, color, rgba, colorNum, dueSoonChip, isOverdue, revealStaggered, eyebrow, statChip, sumAmounts, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, groupDisputes, deadlineNode, statusBadge, STATUS_HELP, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
+  return { el, color, rgba, colorNum, dueSoonChip, isOverdue, revealStaggered, eyebrow, eyebrowWith, statChip, sumAmounts, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, groupDisputes, deadlineNode, statusBadge, STATUS_HELP, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
            dueDate, sourceTag, decisionChip, riskNode, tick };
 })();

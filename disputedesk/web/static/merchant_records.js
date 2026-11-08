@@ -79,7 +79,9 @@
 
   function render(body) {
     const txns = body.transactions || [], past = body.past_disputes || [];
-    document.getElementById("records-eyebrow").replaceChildren(...DD.eyebrow("Merchant records"));
+    // These records are simulated (seeded), not live PayPal data, so the eyebrow says so.
+    document.getElementById("records-eyebrow").replaceChildren(...DD.eyebrowWith("Merchant records",
+      DD.mode.demo ? "recorded, simulated merchant records" : "simulated merchant records"));
     if (!txns.length && !past.length) {
       document.getElementById("records-stats").replaceChildren();
       root.replaceChildren(el("div", { class: "state" },
