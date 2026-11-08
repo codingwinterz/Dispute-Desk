@@ -36,7 +36,7 @@
 
   // ---- header --------------------------------------------------------------------
 
-  function header(d) {
+  function header(d, submit) {
     document.title = `${d.dispute_id} DisputeDesk case`;
     return el("div", { class: "case-head" },
       el("div", {},
@@ -46,11 +46,20 @@
           el("span", { text: DD.reasonLabel(d.reason) }),
           el("span", { class: "num", text: DD.money(d.amount) }),
           el("span", { text: `${DD.stageLabel(d.stage)} stage` }),
-          el("span", { class: `badge ${DD.statusClass(d.status)}`, text: DD.statusLabel(d.status) }),
+          DD.statusBadge(d.status),
+          d.status === "UNDER_REVIEW" ? el("span", { class: "status-detail", text: statusDetail(submit) }) : null,
           DD.sourceTag(d.source))),
       el("div", { class: "deadline" },
-        el("div", { class: "label", text: "Respond within" }),
-        DD.countdownNode(d.seller_response_due_date)));
+        el("div", { class: "label", text: d.status === "UNDER_REVIEW" && !d.seller_response_due_date ? "Waiting on" : "Respond within" }),
+        DD.deadlineNode(d)));
+  }
+
+  // "Evidence submitted" only when this app recorded a successful evidence submission; PayPal also
+  // reviews disputes that were escalated without evidence.
+  function statusDetail(submit) {
+    const sub = submit && submit.submission;
+    return sub && sub.state === "succeeded" && sub.action === "provide_evidence"
+      ? "evidence submitted, under review" : "under review by PayPal";
   }
 
   // ---- decision panel --------------------------------------------------------------
@@ -513,7 +522,7 @@
       el("span", { class: "cap", text: decision && decision.status === "ok"
         ? "What the agent recommends, how strong the buyer's claim looks, and why."
         : "The agent's recommendation appears here once the analysis has run." }));
-    root.replaceChildren(header(dispute), callHead, band, el("div", { class: "case-grid" }, left, right));
+    root.replaceChildren(header(dispute, submit), callHead, band, el("div", { class: "case-grid" }, left, right));
     mountPendingGraph();
   }
 

@@ -54,8 +54,8 @@ def test_grain_is_at_most_four_percent_and_text_still_passes_contrast():
 
 
 def test_hero_and_ticker_count_only_disputes_waiting_for_the_seller():
-    assert 'const WAITING = "WAITING_FOR_SELLER_RESPONSE";' in OVERVIEW
-    assert "rows.filter((d) => d.status === WAITING)" in OVERVIEW
+    assert "DD.groupDisputes(rows)" in OVERVIEW and "const waiting = groups.waiting;" in OVERVIEW
+    assert 'waiting: pick("WAITING_FOR_SELLER_RESPONSE")' in COMMON
     assert "hero(waiting, heroNext" in OVERVIEW and "ticker(waiting, heroNext)" in OVERVIEW
     assert 'fetch("/api/disputes"' in OVERVIEW and '"POST"' not in OVERVIEW and '"PUT"' not in OVERVIEW
     assert "Awaiting analysis" in OVERVIEW  # shown instead of an invented split
@@ -158,3 +158,35 @@ def test_case_cards_have_a_clean_accessible_name():
     card = between(OVERVIEW, "function caseCard(d)", "function render(rows")
     assert '"aria-label": `${label}.`' in card and "Main reason: ${text}" in card
     assert "no recommendation yet" in card
+
+
+# --- queue wording: one definition and one vocabulary everywhere ------------------------------
+
+QUEUE = (WEB / "static" / "queue.js").read_text(encoding="utf-8")
+INSIGHTS = (WEB / "static" / "insights.js").read_text(encoding="utf-8")
+
+
+def test_queue_heading_and_subline_use_the_same_definition_as_overview():
+    summary = between(QUEUE, "function updateSummary()", "async function refresh()")
+    assert "DD.groupDisputes(rows)" in summary
+    assert "waiting on you" in summary and "with PayPal" in summary
+    assert 'getElementById("queue-title")' in summary
+    assert "const next = waiting.map(" in summary  # next deadline among waiting disputes only
+    assert 'id="queue-title"' in (WEB / "queue.html").read_text(encoding="utf-8")
+
+
+def test_status_vocabulary_is_shared_and_keeps_the_longer_meaning():
+    assert 'UNDER_REVIEW: ["With PayPal", "review"]' in COMMON
+    assert 'WAITING_FOR_SELLER_RESPONSE: ["Waiting on you", "waiting"]' in COMMON
+    assert "PayPal is reviewing" not in COMMON + QUEUE + OVERVIEW + INSIGHTS + CASE
+    assert "Under review by PayPal" in COMMON  # tooltip
+    assert '"evidence submitted, under review"' in CASE  # case header, only after a recorded submission
+    for js in (QUEUE, OVERVIEW, CASE):
+        assert "badge ${DD.statusClass" not in js  # every badge goes through DD.statusBadge
+
+
+def test_deadline_cells_say_with_paypal_and_insights_uses_the_shared_clock():
+    assert '"With PayPal"' in between(COMMON, "function deadlineNode(row", "function countdownNode(")
+    assert "DD.deadlineNode(p.data)" in QUEUE and "DD.deadlineNode(d)" in OVERVIEW + CASE
+    assert "DD.clock()" in INSIGHTS and "Date.now()" not in INSIGHTS
+    assert "groups.waiting.filter" in INSIGHTS and '"With PayPal"' in INSIGHTS

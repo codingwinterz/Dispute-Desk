@@ -801,3 +801,7 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
   .ticker-toggle { display: none; }   /* nothing moves, so there is nothing to pause */
   .ticker { padding-right: 0; }
 }
+
+/* ---- queue wording pass: status detail and "With PayPal" deadline ------------------------- */
+.status-detail { color: var(--muted); font-size: 14px; }
+.countdown.with-paypal .cd-main { color: var(--text); }

@@ -47,7 +47,6 @@
     }
     document.getElementById("scope").textContent =
       `Counted from the ${rows.length} ${rows.length === 1 ? "dispute" : "disputes"} in the local store. All dispute records come from the PayPal sandbox.`;
-    const open = rows.filter((d) => d.status !== "RESOLVED");
     const ok = rows.filter((d) => d.decision && d.decision.status === "ok");
 
     const rec = bars(["The agent's", "call"], "What the agent recommended for every dispute.", [
@@ -68,16 +67,18 @@
         { label: "High (70 to 100)", count: bucket(70, 100).length, rows: bucket(70, 100) },
       ]);
 
-    const now = Date.now(), H = 3600 * 1000;
+    const now = DD.clock(), H = 3600 * 1000;  // the recording's time in demo mode
+    const groups = DD.groupDisputes(rows);
     const due = (d) => Date.parse(d.seller_response_due_date);
-    const within = (lo, hi) => open.filter((d) => due(d) - now >= lo && due(d) - now < hi);
-    const noDate = open.filter((d) => Number.isNaN(due(d)));
-    const urgency = bars(["Time", "left"], "Time left to respond to each open dispute.", [
+    const within = (lo, hi) => groups.waiting.filter((d) => due(d) - now >= lo && due(d) - now < hi);
+    const asOf = DD.mode.demo ? ` As of the recording, ${DD.recordedLabel()}.` : "";
+    const urgency = bars(["Time", "left"], `Time left on each dispute waiting on you, and who has the rest.${asOf}`, [
       { label: "Overdue", count: within(-Infinity, 0).length, rows: within(-Infinity, 0) },
       { label: "Within 72 hours", count: within(0, 72 * H).length, rows: within(0, 72 * H) },
       { label: "3 to 7 days", count: within(72 * H, 168 * H).length, rows: within(72 * H, 168 * H) },
       { label: "More than 7 days", count: within(168 * H, Infinity).length, rows: within(168 * H, Infinity) },
-      { label: "No deadline (PayPal is reviewing)", count: noDate.length, rows: noDate },
+      { label: "With PayPal", count: groups.withPayPal.length, rows: groups.withPayPal },
+      ...(groups.withBuyer.length ? [{ label: "Waiting on the buyer", count: groups.withBuyer.length, rows: groups.withBuyer }] : []),
     ]);
 
     root.replaceChildren(rec, risk, byReason, urgency);
@@ -91,6 +92,7 @@
       if (!resp.ok) throw new Error(`The server answered HTTP ${resp.status}. Retrying every 10 seconds.`);
       const body = await resp.json();
       DD.live(true);
+      await DD.modeReady;  // demo mode decides which clock the deadline chart uses
       banner.hidden = true;
       const key = JSON.stringify(body);
       if (key === lastKey) return;
