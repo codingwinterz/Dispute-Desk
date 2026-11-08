@@ -69,7 +69,7 @@
           el("span", { class: "rule-id", text: r.id })),
         el("p", { class: "policy-body" }, ...r.body(s)),
         el("div", { class: "agent-reads" },
-          el("span", { class: "hint", text: "The agent reads" }),
+          el("span", { class: "cap", text: "The agent reads" }),
           el("blockquote", { id: `rule-${r.id}` })));
     });
     const status = el("p", { class: "hint", id: "save-status", "aria-live": "polite" });

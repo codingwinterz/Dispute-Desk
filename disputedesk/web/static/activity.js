@@ -62,7 +62,7 @@
       if (!groups.length || groups[groups.length - 1].label !== label) groups.push({ label, events: [] });
       groups[groups.length - 1].events.push(e);
     }
-    root.replaceChildren(...groups.map((g) => el("section", { class: "day" },
+    const days = groups.map((g) => el("section", { class: "day" },
       el("h2", { text: g.label }),
       el("ol", { class: "timeline" }, ...g.events.map((e) => el("li", { class: `event ${e.kind}` },
         el("span", { class: "event-dot", "aria-hidden": "true" }),
@@ -71,7 +71,9 @@
           el("a", { class: "event-case num", href: `/case/${encodeURIComponent(e.dispute.dispute_id)}`, text: e.dispute.dispute_id }),
           el("span", { text: e.text }),
           e.decision ? DD.decisionChip(e.decision) : null,
-          e.source ? DD.sourceTag(e.source) : null)))))));
+          e.source ? DD.sourceTag(e.source) : null))))));
+    root.replaceChildren(...days);
+    DD.reveal(days);
   }
 
   async function refresh() {

@@ -120,3 +120,26 @@ def test_case_page_tier_one_is_editorial_and_leaves_approval_code_alone():
     assert "\"The agent's\"" in CASE and "callHead" in CASE
     for untouched in ("function openConfirm(d, submit)", "function approvePanel(d, submit)", "/dry-run"):
         assert untouched in CASE
+
+
+# --- phase 3: queue, activity, insights, policies, merchant records --------------------------
+
+def test_insights_charts_open_with_stacked_headers_and_reveal():
+    js = (WEB / "static" / "insights.js").read_text(encoding="utf-8")
+    for title in ('["The agent\'s", "call"]', '["Risk", "scores"]', '["Why buyers", "disputed"]', '["Time", "left"]'):
+        assert title in js
+    assert "DD.reveal([rec, risk, byReason, urgency])" in js
+
+
+def test_activity_and_records_reveal_and_restyle():
+    activity = (WEB / "static" / "activity.js").read_text(encoding="utf-8")
+    assert "DD.reveal(days)" in activity and "root.replaceChildren(...days)" in activity
+    records = (WEB / "static" / "merchant_records.js").read_text(encoding="utf-8")
+    assert '{ text: "Earlier" }' in records and "DD.reveal(" in records
+    assert ".rule-id { font-family: var(--font-display)" in CSS
+
+
+def test_queue_grid_columns_untouched_and_rows_not_transformed():
+    queue = (WEB / "static" / "queue.js").read_text(encoding="utf-8")
+    assert queue.count("headerName:") == 8
+    assert ".ag-row" not in CSS.split("editorial pass, phase 1")[1].replace(".ag-row-hover", "")  # no new row rules

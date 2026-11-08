@@ -753,3 +753,35 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
   .case-card.has-reason:hover .card-front, .case-card.has-reason:focus-visible .card-front { transform: none; }
   .card-back { transform: none; }
 }
+
+/* ---- editorial pass, phase 3: queue, activity, insights, policies, merchant records ------- */
+
+/* Queue: grid header text in the caption style (styling only; columns unchanged). */
+#grid.ag-theme-quartz-dark .ag-header-cell-text { font-variant-caps: all-small-caps; letter-spacing: 0.06em; font-size: 14px; }
+.row-reason-label { font-variant-caps: all-small-caps; letter-spacing: 0.06em; }
+
+/* Activity */
+.day h2 { font-family: var(--font-display); font-weight: 900; text-transform: uppercase; font-size: 34px; line-height: 0.9; color: var(--text); letter-spacing: 0.01em; }
+.event-case { font-family: var(--font-display); font-weight: 800; font-size: 18px; letter-spacing: 0.02em; text-decoration: none; }
+.event-case:hover { text-decoration: underline; }
+.event-time { font-variant-caps: all-small-caps; letter-spacing: 0.05em; font-size: 15px; }
+
+/* Insights: each chart opens with a stacked header; bar labels in the display face. */
+.chart { padding: 24px 24px 22px; }
+.chart .stack-head { margin-bottom: 8px; }
+.chart .stack-head h2 { font-size: clamp(34px, 4vw, 54px); }
+.bar-label { font-family: var(--font-display); font-weight: 800; font-size: 20px; letter-spacing: 0.02em; text-transform: uppercase; }
+.bar-value { font-variant-caps: all-small-caps; letter-spacing: 0.04em; font-size: 17px; }
+
+/* Policies: the rule ID becomes a large manila number. */
+.rule-id { font-family: var(--font-display); font-weight: 900; font-size: 40px; line-height: 0.85; color: var(--accent); letter-spacing: 0.01em; }
+.policy.is-off .rule-id { color: var(--muted); }
+.policy-title { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 0.01em; text-transform: uppercase; }
+.agent-reads .cap { display: block; margin-bottom: 2px; }
+
+/* Merchant records */
+.rec-title a { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: 0.02em; }
+.rec-head h3 { font-family: var(--font-display); font-weight: 800; font-size: 20px; letter-spacing: 0.02em; text-transform: uppercase; }
+.rec-field dt { font-variant-caps: all-small-caps; letter-spacing: 0.05em; }
+.rec-past .stack-head { margin-bottom: 4px; }
+.rec-past-id { font-family: var(--font-display); font-weight: 800; font-size: 18px; letter-spacing: 0.02em; }

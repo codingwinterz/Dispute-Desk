@@ -47,7 +47,7 @@
         block("Shipment", t.shipment, shipmentFields, "No shipment on file for this transaction."),
         block("Checkout device", t.telemetry, deviceFields, "No device record on file for this transaction."))));
     const earlier = past.length ? el("section", { class: "rec-past" },
-      el("h2", { text: "Earlier disputes on file" }),
+      el("div", { class: "stack-head" }, el("h2", {}, el("span", { text: "Earlier" }), el("span", { text: "disputes" }))),
       el("p", { class: "hint", text: "Past disputes from the store's history. A checkout device or IP shared with these shows up as a linked dispute on the case page." }),
       el("ul", { class: "rec-past-list" }, ...past.map((p) => el("li", {},
         el("span", { class: "num rec-past-id", text: p.dispute_id }),
@@ -56,6 +56,7 @@
         p.telemetry ? el("span", { class: "hint", text: `device ${p.telemetry.device_hash}, IP ${p.telemetry.ip}` }) : null,
         DD.sourceTag(p.source))))) : null;
     root.replaceChildren(...[meta, ...folders, earlier].filter(Boolean));
+    DD.reveal([...folders, earlier].filter(Boolean));
   }
 
   (async () => {

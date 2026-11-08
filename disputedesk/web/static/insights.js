@@ -23,9 +23,11 @@
   /** One chart: [{label, count, amountRows}] as horizontal bars scaled to the largest count. */
   function bars(title, note, items, { showAmount = true } = {}) {
     const max = Math.max(1, ...items.map((i) => i.count));
+    const [first, second] = Array.isArray(title) ? title : [title, ""];
     return el("section", { class: "chart" },
-      el("h2", { text: title }),
-      note ? el("p", { class: "hint", text: note }) : null,
+      el("div", { class: "stack-head" },
+        el("h2", {}, el("span", { text: first }), second ? el("span", { text: second }) : null),
+        note ? el("span", { class: "cap", text: note }) : null),
       el("ul", { class: "bars", role: "list" }, ...items.map((i) => {
         const total = i.rows.reduce((s, d) => s + amountOf(d), 0);
         const value = `${i.count} ${i.count === 1 ? "dispute" : "disputes"}${showAmount && i.count ? `, ${money(total, i.rows)}` : ""}`;
@@ -48,18 +50,18 @@
     const open = rows.filter((d) => d.status !== "RESOLVED");
     const ok = rows.filter((d) => d.decision && d.decision.status === "ok");
 
-    const rec = bars("Recommendations", "What the agent recommended for every dispute.", [
+    const rec = bars(["The agent's", "call"], "What the agent recommended for every dispute.", [
       { label: "Defend", count: ok.filter((d) => d.decision.decision === "DEFEND").length, rows: ok.filter((d) => d.decision.decision === "DEFEND") },
       { label: "Accept", count: ok.filter((d) => d.decision.decision === "ACCEPT").length, rows: ok.filter((d) => d.decision.decision === "ACCEPT") },
       { label: "Pending or failed", count: rows.length - ok.length, rows: rows.filter((d) => !ok.includes(d)) },
     ]);
 
     const reasons = [...new Set(rows.map((d) => d.reason))].sort();
-    const byReason = bars("By reason", "Why buyers opened their disputes.",
+    const byReason = bars(["Why buyers", "disputed"], "The reasons buyers gave when they opened a dispute.",
       reasons.map((r) => ({ label: DD.reasonLabel(r), count: rows.filter((d) => d.reason === r).length, rows: rows.filter((d) => d.reason === r) })));
 
     const bucket = (lo, hi) => ok.filter((d) => d.decision.risk_score >= lo && d.decision.risk_score <= hi);
-    const risk = bars("Risk scores",
+    const risk = bars(["Risk", "scores"],
       "How likely each buyer's claim is to be valid, from the evidence on file. Higher means the buyer is more likely right.", [
         { label: "Low (0 to 29)", count: bucket(0, 29).length, rows: bucket(0, 29) },
         { label: "Medium (30 to 69)", count: bucket(30, 69).length, rows: bucket(30, 69) },
@@ -70,7 +72,7 @@
     const due = (d) => Date.parse(d.seller_response_due_date);
     const within = (lo, hi) => open.filter((d) => due(d) - now >= lo && due(d) - now < hi);
     const noDate = open.filter((d) => Number.isNaN(due(d)));
-    const urgency = bars("Open disputes by deadline", "Time left to respond to each open dispute.", [
+    const urgency = bars(["Time", "left"], "Time left to respond to each open dispute.", [
       { label: "Overdue", count: within(-Infinity, 0).length, rows: within(-Infinity, 0) },
       { label: "Within 72 hours", count: within(0, 72 * H).length, rows: within(0, 72 * H) },
       { label: "3 to 7 days", count: within(72 * H, 168 * H).length, rows: within(72 * H, 168 * H) },
@@ -79,6 +81,7 @@
     ]);
 
     root.replaceChildren(rec, risk, byReason, urgency);
+    DD.reveal([rec, risk, byReason, urgency]);
   }
 
   async function refresh() {
