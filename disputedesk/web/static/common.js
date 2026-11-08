@@ -224,7 +224,8 @@ const DD = (() => {
     const c = countdown(dueIso);
     return el("span", { class: `countdown${c.urgent ? " urgent" : ""}`, "data-due": dueIso || "" },
       el("span", { class: "cd-main", text: c.text }),
-      withDate && dueIso ? el("span", { class: "sub", text: mode.demo ? `Due ${dueDate(dueIso)}, as recorded ${recordedLabel()}` : `Due ${dueDate(dueIso)}` }) : null);
+      withDate && dueIso ? el("span", { class: "sub", title: mode.demo ? `Due ${dueDate(dueIso)}; countdown as recorded ${recordedLabel()}` : null,
+        text: mode.demo ? `Due ${dueDate(dueIso).split(",")[0]}, as of ${recordedLabel().split(",")[0]}` : `Due ${dueDate(dueIso)}` }) : null);
   }
 
   function sourceTag(source) {

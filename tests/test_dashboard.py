@@ -196,8 +196,11 @@ def test_nav_lists_only_working_pages_and_a_skip_link():
 
 def test_queue_reason_line_uses_existing_read_only_api_and_leaves_columns_alone():
     js = (WEB / "static" / "queue.js").read_text(encoding="utf-8")
-    assert "onCellMouseOver" in js and "onCellFocused" in js and "fetch(`/api/decisions/" in js
-    assert "reasoning[0]" in js and '"method"' not in js
+    assert "onCellMouseOver" in js and "onCellFocused" in js
+    # Through the shared, cached helper, which reads the existing GET /api/decisions/{id} only.
+    assert "DD.topReason(row)" in js and '"method"' not in js and "fetch(`/api/decisions/" not in js
+    common = (WEB / "static" / "common.js").read_text(encoding="utf-8")
+    assert "fetch(`/api/decisions/${encodeURIComponent(row.dispute_id)}`" in common and "reasoning[0]" in common
     headers = [h for h in ("Respond within", "Dispute", "Reason", "Amount", "Status", "Recommended", "Risk", "Source")]
     assert all(f'headerName: "{h}"' in js for h in headers) and js.count("headerName:") == len(headers)
 

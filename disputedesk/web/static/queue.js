@@ -69,25 +69,9 @@
   gridEl.parentNode.insertBefore(stage, gridEl);
   const reasonLine = el("div", { class: "row-reason", role: "status", "aria-live": "polite", hidden: true });
   stage.append(gridEl, reasonLine);
-  const reasons = new Map();  // dispute_id -> { key, text } ; key = decision created_at
   let reasonFor = null, hoverTimer = 0;
-
-  async function topReason(row) {
-    const d = row.decision;
-    if (!d || d.status !== "ok") return "";
-    const cached = reasons.get(row.dispute_id);
-    if (cached && cached.key === d.created_at) return cached.text;
-    try {
-      const resp = await fetch(`/api/decisions/${encodeURIComponent(row.dispute_id)}`, { cache: "no-store" });
-      const body = resp.ok ? await resp.json() : null;
-      const first = body && body.decision && body.decision.reasoning && body.decision.reasoning[0];
-      const text = first ? first.point : "";
-      reasons.set(row.dispute_id, { key: d.created_at, text });
-      return text;
-    } catch {
-      return "";
-    }
-  }
+  // The same cached main reason the Overview cards and the case page use (DD.topReason).
+  const topReason = (row) => DD.topReason(row);
 
   function hideReason() { reasonFor = null; reasonLine.hidden = true; }
 
