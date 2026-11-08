@@ -37,7 +37,8 @@ def test_approve_dialog_flow_is_unchanged():
     # nothing from the pointer or lighting passes reaches the dialog
     for later in ("DDPointer", "--glow", "--shadow", "tilt"):
         assert later not in dialog
-    assert "dialog" not in CSS.split("palette pass, phase 2: depth lighting")[1]
+    later = re.sub(r"/\*.*?\*/", "", CSS.split("palette pass, phase 2: depth lighting")[1], flags=re.S)
+    assert "dialog" not in later and ".confirm" not in later
 
 
 def test_approve_button_is_still_gated_and_says_demo_mode_in_demo():
@@ -67,8 +68,12 @@ def test_demo_badge_and_disabled_demo_controls_on_every_page():
 def test_queue_grid_columns_are_unchanged_and_rows_are_not_styled():
     headers = re.findall(r'headerName: "([^"]+)"', QUEUE)
     assert headers == ["Respond within", "Dispute", "Reason", "Amount", "Status", "Recommended", "Risk", "Source"]
-    for phase in ("palette pass, phase 2", "palette pass, phase 3", "palette pass, phase 4"):
-        assert ".ag-row" not in CSS.split(phase)[1]
+    # Any later AG Grid row rule must be the allowed recommendation edge: an inset box-shadow, nothing else.
+    later = re.sub(r"/\*.*?\*/", "", CSS.split("palette pass, phase 2")[1], flags=re.S)
+    for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", later):
+        if ".ag-row" in sel:
+            assert re.fullmatch(r"#grid \.ag-row\.rec-[a-z]+", sel.strip()), sel
+            assert [d.split(":", 1)[0].strip() for d in body.split(";") if d.strip()] == ["box-shadow"] and "inset" in body
     assert "DDPointer" not in QUEUE
 
 
@@ -80,3 +85,21 @@ def test_queue_wording_is_unchanged():
     for words in ("waiting on you. ", "with PayPal. ", "waiting on the buyer. ", "Next response due in ",
                   "still being analyzed.", "Every waiting dispute has a recommendation."):
         assert words in summary, words
+
+
+def test_dry_run_is_unchanged_and_read_only():
+    panel = between(CASE, "function approvePanel(d, submit)", "function openConfirm(")
+    assert 'const dryButton = el("button", { class: "secondary", type: "button", text: "Show the exact request (dry run)" });' in panel
+    assert 'fetch(`/api/submissions/${encodeURIComponent(d.dispute_id)}/dry-run`, { cache: "no-store" })' in panel
+    dry = panel.split("dryButton.addEventListener", 1)[1].split("});", 1)[0]
+    assert "method" not in dry and "POST" not in dry
+    assert "Built from the last stored state of this dispute. Nothing was sent" in panel
+
+
+def test_approval_event_text_names_what_was_approved():
+    activity = (STATIC / "activity.js").read_text(encoding="utf-8")
+    for js in (activity, CASE):
+        assert 'provide_evidence: "You approved sending evidence to PayPal"' in js
+        assert 'accept_claim: "You approved accepting the claim"' in js
+    assert "You approved sending ${" not in activity  # the old template produced "sending accept the claim"
+    assert '"Approved and sent", ""]' not in CASE

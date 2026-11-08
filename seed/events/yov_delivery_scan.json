@@ -1,0 +1,11 @@
+{
+  "event_id": "EVT-YOV-SCAN-1",
+  "transaction_id": "5GU29781PX414531M",
+  "kind": "carrier_scan",
+  "carrier": "USPS",
+  "status": "DELIVERED",
+  "location": "Denver, CO, US",
+  "time": "2026-11-07T19:42:00Z",
+  "signed_by_buyer": true,
+  "note": "Late carrier scan received after the dispute opened: delivered to the shipping address, signature captured."
+}

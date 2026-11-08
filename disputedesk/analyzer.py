@@ -115,7 +115,9 @@ class Analyzer:
             return f"graph_unavailable:{type(exc).__name__}", None
         return ("ok", ctx) if ctx else ("no_graph_context", None)
 
-    def analyze(self, dispute_id: str, force: bool = False) -> str:
+    def analyze(self, dispute_id: str, force: bool = False, trigger: str | None = None) -> str:
+        """Decide one dispute. `trigger` records why a re-run happened (e.g. "merchant_event:EVT-1");
+        the decision it replaces is kept in the decision history."""
         status, ctx = self.context(dispute_id)
         if status in ("missing", "waiting_for_full_details"):
             log.info("analyzer dispute=%s: %s", dispute_id, status)
@@ -123,10 +125,10 @@ class Analyzer:
         if not force and self._decisions.has_ok(dispute_id):
             return "already_decided"
         if ctx is None:
-            self._decisions.save(dispute_id, DecisionResult("error", self._model, 0, error=status), None)
+            self._decisions.save(dispute_id, DecisionResult("error", self._model, 0, error=status), None, trigger=trigger)
             return status
         facts = context_to_facts(ctx)
         rules = self._rules_provider()
         result = self._decide(dispute_id, facts, rules, self._model)
-        self._decisions.save(dispute_id, result, ctx, rules)
+        self._decisions.save(dispute_id, result, ctx, rules, trigger=trigger)
         return result.status if result.status == "ok" else (result.error or "error")

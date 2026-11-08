@@ -76,7 +76,7 @@ def test_decision_endpoint_pending_and_unknown(client, stores):
 
 # --- local-only guard ----------------------------------------------------------------------
 
-@pytest.mark.parametrize("path", ["/", "/case/PP-R-TST-1", "/static/app.css", "/static/queue.js",
+@pytest.mark.parametrize("path", ["/", "/queue", "/overview", "/case/PP-R-TST-1", "/static/app.css", "/static/queue.js",
                                   "/api/disputes", "/api/decisions/PP-R-TST-1"])
 def test_dashboard_and_api_refuse_tunnelled_requests(client, stores, path):
     decided(stores)
@@ -94,7 +94,7 @@ def test_webhook_stays_public_through_the_tunnel(client):
 # --- pages -------------------------------------------------------------------------------------
 
 def test_pages_and_assets_are_served_locally(client):
-    for path, marker in [("/", 'id="grid"'), ("/case/PP-R-ANY", 'id="case"'), ("/static/app.css", "--primary"),
+    for path, marker in [("/", 'id="overview"'), ("/queue", 'id="grid"'), ("/case/PP-R-ANY", 'id="case"'), ("/static/app.css", "--primary"),
                          ("/static/common.js", "renderNav"), ("/static/queue.js", "createGrid"),
                          ("/static/case.js", "graphPanel")]:
         resp = client.get(path)
@@ -150,8 +150,10 @@ def test_old_decisions_get_fact_refs_from_their_graph_snapshot(client, stores):
 
 
 def test_pages_and_assets_always_revalidate(client):
-    for path in ("/", "/policies", "/case/PP-R-ANY", "/static/case.js", "/static/graph3d.js"):
+    for path in ("/", "/queue", "/policies", "/case/PP-R-ANY", "/static/case.js", "/static/graph3d.js"):
         assert client.get(path).headers["cache-control"] == "no-cache", path
+    # the old start-page link's redirect must not be cached either
+    assert client.get("/overview", follow_redirects=False).headers["cache-control"] == "no-cache"
     assert "cache-control" not in client.get("/api/disputes").headers  # API responses unchanged
 
 
@@ -166,13 +168,34 @@ def test_case_page_loads_pinned_three_with_sri_and_flat_fallback():
     assert "unavailableReason" in case_js and '"pagehide", disposeGraph' in case_js
 
 
-def test_overview_page_is_served_local_only_and_in_nav(client):
-    resp = client.get("/overview")
-    assert resp.status_code == 200 and 'id="overview"' in resp.text and resp.headers["cache-control"] == "no-cache"
-    assert client.get("/overview", headers=TUNNEL).status_code == 403
-    common = client.get("/static/common.js").text
-    assert '["overview", "/overview", "Overview"]' in common
+def _title(resp):
+    return re.search(r"<title>(.*?)</title>", resp.text).group(1)
+
+
+def test_start_page_is_the_overview_and_the_queue_lives_at_queue(client):
+    home = client.get("/")
+    assert home.status_code == 200 and _title(home) == "DisputeDesk overview" and 'id="overview"' in home.text
+    queue = client.get("/queue")
+    assert queue.status_code == 200 and _title(queue) == "DisputeDesk queue" and 'id="grid"' in queue.text
+    old = client.get("/overview", follow_redirects=False)
+    assert old.status_code == 307 and old.headers["location"] == "/"  # temporary: never cached for good
+    assert _title(client.get("/overview")) == "DisputeDesk overview"  # old links still land on the Overview
+    assert client.get("/overview", headers=TUNNEL, follow_redirects=False).status_code == 403  # guard first
     assert "fetch(\"/api/disputes\"" in client.get("/static/overview.js").text  # existing API only
+
+
+def test_navigation_points_at_the_new_paths():
+    common = (WEB / "static" / "common.js").read_text(encoding="utf-8")
+    assert '[["overview", "/", "Overview"], ["queue", "/queue", "Queue"],' in common  # Overview first
+    assert 'el("a", { class: "brand", href: "/" }' in common
+    # the marker follows the page key, not the path: Overview on "/", Queue on "/queue"
+    assert 'DD.renderNav("overview")' in (WEB / "static" / "overview.js").read_text(encoding="utf-8")
+    assert 'DD.renderNav("queue")' in (WEB / "static" / "queue.js").read_text(encoding="utf-8")
+    assert '<a class="back" href="/queue">Back to the queue</a>' in (WEB / "case.html").read_text(encoding="utf-8")
+    assert 'href: "/queue"' in (WEB / "static" / "casemap.js").read_text(encoding="utf-8")  # Overview's "+N more"
+    root = WEB.parent.parent
+    for script in ("start.py", "demo.py"):
+        assert "the queue is at /queue" in (root / "scripts" / script).read_text(encoding="utf-8"), script
 
 
 @pytest.mark.parametrize("path,marker,script", [("/activity", 'id="activity"', "activity.js"),

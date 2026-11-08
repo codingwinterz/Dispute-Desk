@@ -33,6 +33,7 @@
   --glow-hero-soft: 7%;     /* behind the Overview hero type */
   --glow-verdict: 9%;       /* inside the case page's verdict panel */
   --glow-spotlight: 11%;    /* the cursor spotlight on the page background */
+  --glow-page-hero: 10%;    /* behind each page hero */
   --glare: 10%;             /* the glare on a tilted Overview card (painted under its text) */
   --spot-size: 760px;
   /* layered shadows: a contact shadow plus a long soft one, neutral shade only */
@@ -468,7 +469,7 @@ button.secondary.small { font-size: 13px; padding: 6px 10px; }
   border-radius: var(--r-md);
   box-shadow: 0 1px 0 color-mix(in srgb, var(--sheen) 3%, transparent) inset, 0 18px 40px -18px color-mix(in srgb, var(--shade) 75%, transparent), 0 4px 12px -6px color-mix(in srgb, var(--shade) 50%, transparent);
 }
-.ag-theme-quartz-dark .ag-row-hover { box-shadow: inset 3px 0 0 var(--primary); }
+/* (row hover keeps AG Grid's own hover colour; the left edge belongs to the recommendation) */
 .chip.defend { box-shadow: 0 0 0 1px var(--primary), 0 0 14px -2px color-mix(in srgb, var(--primary) 55%, transparent); }  /* the ring keeps its edge >= 3.5:1 */
 .chip.accept { box-shadow: 0 0 12px -4px color-mix(in srgb, var(--primary) 45%, transparent); }
 .panel { box-shadow: 0 16px 36px -22px color-mix(in srgb, var(--shade) 80%, transparent); }
@@ -985,8 +986,8 @@ button.primary.approve:disabled { background: var(--border); color: var(--muted)
    two lights meet (a pool and the cursor spotlight) the brighter wins; they never add up. Each light's
    peak is contrast-tested on its own. */
 .hero-split { position: relative; }
-.hero-split::before {
-  content: ""; position: absolute; inset: -48px -24px -24px; z-index: -1; pointer-events: none; mix-blend-mode: lighten;
+.hero-glow {
+  position: absolute; inset: -48px -24px -24px; z-index: -1; pointer-events: none; mix-blend-mode: lighten;
   background:
     radial-gradient(ellipse 34% 62% at 76% 50%, color-mix(in srgb, var(--primary) var(--glow-hero), var(--ground)) 0%, transparent 70%),
     radial-gradient(ellipse 28% 50% at 18% 46%, color-mix(in srgb, var(--primary) var(--glow-hero-soft), var(--ground)) 0%, transparent 70%);
@@ -1009,25 +1010,24 @@ button.primary.approve:disabled { background: var(--border); color: var(--muted)
   border-radius: 50%; opacity: 0; mix-blend-mode: lighten; will-change: transform, opacity;
   background: radial-gradient(closest-side, color-mix(in srgb, var(--primary) var(--glow-spotlight), var(--ground)) 0%, transparent 100%);
 }
-/* Card glare: under the card's text (z-index -1 inside the card's own stacking context). */
+/* Card glare: a disc under the card's text (z-index -1 inside the card's own stacking context), clipped to
+   the card, moved by transform and faded by opacity. */
 .case-card { isolation: isolate; transform-origin: 50% 50%; will-change: auto; }
-.case-card::before {
-  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; border-radius: inherit;
-  background: radial-gradient(360px circle at var(--gx, 50%) var(--gy, 50%), color-mix(in srgb, var(--primary) var(--glare), transparent) 0%, transparent 70%);
-  opacity: var(--glare-on, 0);
+.card-glare { position: absolute; inset: 0; z-index: -1; overflow: hidden; border-radius: inherit; pointer-events: none; }
+.card-glare-disc {
+  position: absolute; left: 0; top: 0; width: 504px; height: 504px; margin: -252px 0 0 -252px; border-radius: 50%; opacity: 0;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--primary) var(--glare), transparent) 0%, transparent 100%);
+  will-change: transform, opacity;
 }
 @media (prefers-reduced-motion: reduce), (hover: none), (pointer: coarse) {
-  .spotlight, .case-card::before { display: none; }
+  .spotlight, .card-glare { display: none; }
   .case-card { transform: none !important; }
 }
 
 /* ---- palette pass, phase 4: hero layers, case map hover label ------------------------------------ */
 /* Multi-layer parallax: the glow pool (deepest) drifts against the pointer; the type lines and the
    caption move with it at increasing rates. --px/--py come eased from pointer.js's shared loop. */
-.hero-line:nth-child(1) { --depth: 8px; }
-.hero-line:nth-child(2) { --depth: 16px; }
-.hero-board .cap { transform: translate3d(calc(var(--px, 0) * 24px), calc(var(--py, 0) * 14px), 0); }
-.hero-split::before { transform: translate3d(calc(var(--px, 0) * -26px), calc(var(--py, 0) * -16px), 0); }
+/* (rates live in overview.js PARALLAX: glow -26/-16px, lines 8 and 16px, caption 24/14px; written as transforms) */
 /* Case map labels follow their projected node as the map turns (offsets in layout units). */
 .map-node, .map-hover {
   transform: translate(calc(var(--dx, 0) * 100cqw / var(--map-w, 560)), calc(var(--dy, 0) * 100cqw / var(--map-w, 560)));
@@ -1043,6 +1043,302 @@ button.primary.approve:disabled { background: var(--border); color: var(--muted)
 .mh-kind { font-weight: 700; color: var(--primary-text); }
 .mh-kind.is-paypal, .mh-kind.is-pending { color: var(--muted); }
 @media (prefers-reduced-motion: reduce) {
-  .hero-board .cap, .hero-split::before { transform: none !important; }
+  .hero-board .cap, .hero-glow { transform: none !important; }
   .map-node, .map-hover { transform: none; }
 }
+
+/* ---- final design pass, phase 1: page hero, type weights, cards, buttons, reveals, queue ---------- */
+/* Editorial page hero, shared by every page. */
+.page-hero { position: relative; padding: 14px 0 30px; margin-bottom: 4px; }
+.page-hero::before {
+  content: ""; position: absolute; inset: -36px -10% -12px -36px; z-index: -1; pointer-events: none; mix-blend-mode: lighten;
+  background: radial-gradient(ellipse 42% 75% at 16% 42%, color-mix(in srgb, var(--primary) var(--glow-page-hero), var(--ground)) 0%, transparent 70%);
+}
+.page-hero h1 { margin-bottom: 12px; }
+.page-hero .lede { max-width: 66ch; }
+.eyebrow {
+  display: flex; align-items: center; gap: 10px; margin: 0 0 12px;
+  font-size: 13px; font-weight: 700; font-variant-caps: all-small-caps; letter-spacing: 0.16em; color: var(--muted);
+}
+.eyebrow::before { content: ""; width: 24px; height: 2px; background: var(--primary); }
+.eyebrow .sep { color: var(--primary-text); padding: 0 0.45em; }
+.stat-chips { list-style: none; display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0 0; padding: 0; }
+.stat-chip {
+  display: grid; gap: 3px; min-width: 150px; padding: 13px 18px 14px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--border); border-top-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  box-shadow: var(--shadow-1);
+}
+.stat-value { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display); font-weight: 800; font-size: 34px; line-height: 1; color: var(--text); }
+.stat-dot { gap: 0; }
+.stat-label { font-size: 13px; font-variant-caps: all-small-caps; letter-spacing: 0.08em; color: var(--muted); }
+.stat-note { font-size: 13px; color: var(--muted); }
+.stat-chip.overdue .stat-value { color: var(--danger); }
+
+/* Type: the heavy display weight is for page titles and hero numbers; secondary headings use 600, tracked. */
+.stack-head h2, .day h2, .rec-head h3, .policy-title, .bar-label, .chart .stack-head h2 { font-weight: 600; letter-spacing: 0.04em; }
+
+/* Cards share the Overview's depth and a thin blue top edge. */
+.panel, .chart, .rec-folder, .policy, .case-card { border-top-color: color-mix(in srgb, var(--primary) 55%, var(--border)); }
+
+/* Quiet outlined secondary buttons with tracked capitals (in the page only: the Approve dialog keeps its look). */
+main button.secondary {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 9px 14px;
+  border-color: var(--control-edge); color: var(--text);
+}
+main button.secondary:hover { border-color: var(--primary); color: var(--primary-text); }
+main button.secondary.small { font-size: 11px; padding: 6px 10px; }
+
+/* Staggered reveal: each element waits a little longer than the one before. */
+.is-revealed { transition-delay: calc(var(--reveal-i, 0) * 70ms); }
+
+/* Queue: segmented status filter. */
+.segmented { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; border: 1px solid var(--control-edge); background: var(--surface); }
+.segmented button {
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); background: transparent; border: 0; border-radius: 999px;
+  padding: 6px 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+}
+.segmented button:hover { color: var(--text); }
+.segmented button[aria-pressed="true"] { background: var(--primary-fill); color: var(--on-primary); }
+.seg-count { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--primary-text); }
+.segmented button[aria-pressed="true"] .seg-count { color: var(--on-primary); }
+/* Queue rows: a left edge by recommendation (inset shadow only: no transform, width or border change). */
+#grid .ag-row.rec-defend { box-shadow: inset 4px 0 0 var(--primary); }
+#grid .ag-row.rec-accept { box-shadow: inset 2px 0 0 var(--primary-text); }
+@media (max-width: 900px) {
+  .stat-chip { min-width: 0; flex: 1 1 140px; }
+  .segmented { flex-wrap: wrap; border-radius: var(--r-md); }
+}
+
+/* ---- final design pass, phase 2: insights tiles, deadline runway, risk ruler --------------------- */
+.empty-note { margin: 14px 0 0; color: var(--muted); font-size: 14px; max-width: 64ch; }
+/* Big-number tiles */
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 8px; }
+.tile {
+  display: grid; align-content: start; gap: 8px; padding: 20px 22px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--border); border-top-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  box-shadow: var(--shadow-2);
+}
+.tile-label { font-size: 13px; font-weight: 700; font-variant-caps: all-small-caps; letter-spacing: 0.1em; color: var(--muted); }
+.tile-number { font-family: var(--font-display); font-weight: 800; font-size: 52px; line-height: 0.95; color: var(--text); }
+.tile-split { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.tile-unit { font-size: 14px; color: var(--muted); margin-right: 14px; }
+.split-bar { display: flex; gap: 3px; height: 10px; margin-top: 2px; }
+.split-defend { background: var(--primary-fill); border-radius: 3px; }
+.split-accept { border: 2px solid var(--primary-text); border-radius: 3px; }
+.tile-note { font-size: 13.5px; color: var(--muted); line-height: 1.45; }
+.tile-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.tile-list li { display: flex; align-items: baseline; gap: 12px; color: var(--text); }
+.tile-count { font-family: var(--font-display); font-weight: 800; font-size: 30px; line-height: 1; min-width: 1.2em; }
+
+/* Deadline runway: dates along an axis, one card per dispute waiting on you, stacked into lanes. */
+.runway { position: relative; height: calc(var(--lanes, 1) * 84px + 70px); margin: 26px 6px 4px; }
+.rw-axis { position: absolute; left: 0; right: 0; bottom: 34px; height: 2px; background: var(--control-edge); }
+.rw-tick { position: absolute; top: -3px; width: 1px; height: 8px; background: var(--control-edge); }
+.rw-tick span { position: absolute; top: 12px; transform: translateX(-50%); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.rw-soon { position: absolute; top: 0; bottom: 35px; background: color-mix(in srgb, var(--primary) 7%, transparent); border-right: 1px dashed var(--primary); }
+.rw-soon span { position: absolute; top: 0; left: 8px; font-size: 12px; font-variant-caps: all-small-caps; letter-spacing: 0.08em; color: var(--primary-text); white-space: nowrap; }
+.rw-now { position: absolute; top: 0; bottom: 34px; width: 2px; margin-left: -1px; background: var(--primary); }
+.rw-now span { position: absolute; bottom: -24px; left: 0; transform: translateX(-50%); font-size: 11px; font-weight: 700; font-variant-caps: all-small-caps; letter-spacing: 0.08em; color: var(--primary-text); white-space: nowrap; }
+.rw-markers { list-style: none; margin: 0; padding: 0; }
+.rw-marker { position: absolute; bottom: 34px; width: 0; }
+.rw-pin { position: absolute; left: -1px; bottom: 1px; width: 2px; height: calc(20px + var(--lane) * 84px); background: var(--primary); }
+.rw-pin::after { content: ""; position: absolute; left: -4px; bottom: -6px; width: 10px; height: 10px; border-radius: 50%; background: var(--primary-fill); box-shadow: 0 0 0 2px var(--surface); }
+.rw-marker.overdue .rw-pin, .rw-marker.overdue .rw-pin::after { background: var(--danger); }
+.rw-card {
+  position: absolute; bottom: calc(20px + var(--lane) * 84px); width: 190px; transform: translateX(-50%);
+  display: grid; gap: 3px; padding: 8px 10px 9px; border-radius: var(--r-sm); text-decoration: none; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border); border-top: 2px solid var(--primary); box-shadow: var(--shadow-1);
+  font-size: 12.5px; line-height: 1.3;
+}
+.rw-card:hover { border-color: var(--primary); }
+.rw-card:hover .rw-id { color: var(--primary-text); }
+.at-start .rw-card { transform: translateX(-14px); }
+.at-end .rw-card { transform: translateX(calc(-100% + 14px)); }
+.rw-id { font-weight: 700; }
+.rw-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rw-meta .chip { font-size: 11px; padding: 3px 7px; }
+.rw-meta .chip.accept { padding: 1.5px 5.5px; }
+.rw-due { font-weight: 700; font-variant-numeric: tabular-nums; }
+.rw-date { color: var(--muted); font-size: 12px; }
+
+/* Risk ruler: 0 to 100 with bands, each decided dispute plotted and labelled. */
+.ruler { position: relative; height: calc(var(--lanes, 1) * 40px + 82px); margin: 26px 6px 4px; }
+.rl-bands { position: absolute; left: 0; right: 0; top: 0; height: 30px; }
+.rl-band { position: absolute; top: 0; height: 30px; }
+.rl-band span { position: absolute; top: 0; left: 6px; font-size: 12px; font-variant-caps: all-small-caps; letter-spacing: 0.08em; color: var(--muted); white-space: nowrap; }
+.rl-band::after { content: ""; position: absolute; left: 1px; right: 1px; bottom: 0; height: 6px; border-radius: 2px; }
+.rl-band.low::after { background: color-mix(in srgb, var(--primary) 25%, var(--surface)); }
+.rl-band.mid::after { background: color-mix(in srgb, var(--primary) 50%, var(--surface)); }
+.rl-band.high::after { background: var(--primary); }
+.rl-axis { position: absolute; left: 0; right: 0; top: 46px; height: 2px; background: var(--control-edge); }
+.rl-tick { position: absolute; top: -3px; width: 1px; height: 8px; background: var(--control-edge); }
+.rl-tick span { position: absolute; top: 10px; transform: translateX(-50%); font-size: 11.5px; color: var(--muted); }
+.rl-markers { list-style: none; margin: 0; padding: 0; }
+.rl-marker { position: absolute; top: 47px; width: 0; }
+.rl-marker::before { content: ""; position: absolute; left: 0; top: 8px; width: 1px; height: calc(30px + var(--lane) * 40px - 8px); background: var(--control-edge); }
+.rl-dot { position: absolute; left: -8px; top: -8px; width: 16px; height: 16px; border-radius: 50%; box-sizing: border-box; box-shadow: 0 0 0 2px var(--surface); }
+.rl-marker.is-defend .rl-dot { background: var(--primary-fill); border: 2px solid var(--primary); }
+.rl-marker.is-accept .rl-dot { background: var(--surface); border: 3px solid var(--primary-text); }
+.rl-label {
+  position: absolute; z-index: 2; top: calc(30px + var(--lane) * 40px); transform: translateX(-50%); white-space: nowrap;  /* above every connector line */
+  display: inline-flex; align-items: baseline; gap: 8px; padding: 4px 9px; border-radius: var(--r-sm); text-decoration: none;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text); font-size: 12.5px;
+}
+.rl-label:hover { border-color: var(--primary); }
+.rl-marker.at-start .rl-label { transform: translateX(-12px); }
+.rl-marker.at-end .rl-label { transform: translateX(calc(-100% + 12px)); }
+.rl-id { font-weight: 700; }
+.rl-score { font-family: var(--font-display); font-weight: 800; font-size: 16px; color: var(--primary-text); }
+
+@media (max-width: 760px) {
+  .tiles { grid-template-columns: minmax(0, 1fr); }
+  /* the runway becomes a plain list of cards */
+  .runway { height: auto; margin: 18px 0 0; }
+  .rw-axis, .rw-soon, .rw-now, .rw-pin { display: none; }
+  .rw-markers { display: grid; gap: 10px; }
+  .rw-marker { position: static; width: auto; }
+  .rw-card, .at-start .rw-card, .at-end .rw-card { position: static; transform: none; width: auto; }
+}
+
+/* ---- final design pass, phase 3: merchant records and activity ------------------------------------ */
+/* Shipment: carrier line and a tracking stepper built from the stored status and dates. */
+.ship-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin: 2px 0 0; }
+.ship-carrier { font-weight: 700; color: var(--text); }
+.ship-tracking { color: var(--muted); font-size: 13px; }
+.stepper { list-style: none; display: grid; grid-template-columns: repeat(var(--steps, 3), minmax(0, 1fr)); margin: 14px 0 12px; padding: 0; }
+.step { position: relative; display: grid; justify-items: center; align-content: start; gap: 4px; text-align: center; font-size: 12px; color: var(--muted); }
+.step::before { content: ""; position: absolute; top: 6px; right: 50%; width: 100%; height: 2px; background: var(--border); }
+.step:first-child::before { display: none; }
+.step.done::before { background: var(--primary); }
+.step-dot { position: relative; z-index: 1; width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box; border: 2px solid var(--control-edge); background: var(--ground); }
+.step.done .step-dot { background: var(--primary-fill); border-color: var(--primary); }
+.step.missing .step-dot { border-style: dashed; }
+.step-label { line-height: 1.25; }
+.step.done .step-label { color: var(--text); font-weight: 600; }
+.step-when { font-size: 11.5px; color: var(--muted); }
+/* Checkout device: chips, and a connector to earlier disputes that share the device or IP. */
+.dev-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+.dev-chip {
+  display: inline-flex; align-items: baseline; gap: 7px; padding: 5px 11px; border-radius: 999px; font-size: 13px;
+  color: var(--text); background: var(--surface); border: 1px solid var(--control-edge);
+}
+.dev-chip-label { font-size: 12px; font-variant-caps: all-small-caps; letter-spacing: 0.08em; color: var(--muted); }
+.dev-chip.linked { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.link-tree { position: relative; margin: 14px 0 0 18px; padding-left: 0; }
+.link-tree::before { content: ""; position: absolute; left: 0; top: -14px; bottom: 11px; width: 2px; background: var(--primary); }
+.link-title { margin: 0 0 6px 16px; font-size: 12.5px; font-weight: 700; color: var(--primary-text); }
+.link-tree ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.link-tree li { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-left: 16px; font-size: 13.5px; }
+.link-tree li::before { content: ""; position: absolute; left: 0; top: 0.7em; width: 11px; height: 2px; background: var(--primary); }
+.link-none { margin-top: 12px; }
+.rec-past-list li.is-linked { border-color: color-mix(in srgb, var(--primary) 60%, var(--border)); box-shadow: inset 3px 0 0 var(--primary); }
+.rec-past-list li:target { outline: 2px solid var(--focus); outline-offset: 2px; }
+.link-tag { font-size: 12.5px; font-weight: 700; color: var(--primary-text); }
+
+/* Activity: filter chips (they double as the legend), per-day summary, nodes by type, milestones. */
+.filter-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 6px; }
+.filter-chip {
+  display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  color: var(--text); background: var(--surface); border: 1px solid var(--control-edge); border-radius: 999px; padding: 6px 12px;
+}
+.filter-chip:hover { border-color: var(--primary); }
+.filter-chip[aria-pressed="true"] { background: var(--primary-fill); border-color: var(--primary); color: var(--on-primary); }
+.chip-count { font-weight: 700; color: var(--primary-text); }
+.filter-chip[aria-pressed="true"] .chip-count { color: var(--on-primary); }
+.chip-node { width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; border: 2px solid var(--muted); }
+.kind-analyzed .chip-node { border-color: var(--primary-text); }
+.kind-edited .chip-node { border-color: var(--primary-text); border-style: dashed; }
+.kind-milestone .chip-node { background: var(--primary-fill); border-color: var(--primary); }
+.kind-failed .chip-node { border-color: var(--danger); }
+.filter-chip[aria-pressed="true"] .chip-node { border-color: var(--on-primary); }
+.day-summary { margin: -4px 0 10px; font-size: 13.5px; color: var(--muted); }
+.event.analyzed .event-dot { border-color: var(--primary-text); }
+.event.edited .event-dot { border-color: var(--primary-text); border-style: dashed; }
+.event.milestone .event-dot {
+  width: 16px; height: 16px; margin: 2px 0 0 -2px; background: var(--primary-fill); border-color: var(--primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 25%, transparent);
+}
+.event.milestone .event-body {
+  padding: 6px 10px; border-radius: var(--r-sm); background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--primary) 55%, var(--border)); box-shadow: var(--shadow-1);
+}
+.event.milestone .event-body > span:not(.chip):not(.tag) { font-weight: 600; }
+@media (max-width: 760px) {
+  .stepper { gap: 4px; }
+  .step { font-size: 11px; }
+}
+
+/* ---- final design pass, phase 4: policy citations, split-flap, magnet lines, annotated citations --- */
+/* Policies: "cited in N decisions" from stored decisions, and a smoother switch. */
+.cited-slot { margin: 10px 0 0 54px; }
+.cited-line { margin: 0; font-size: 13.5px; color: var(--muted); }
+.cited-line .cited-count { font-family: var(--font-display); font-weight: 800; font-size: 20px; color: var(--primary-text); margin-right: 2px; }
+.cited-line.is-zero, .cited-line.is-loading { font-style: italic; }
+.switch .track { transition: background 0.22s ease, box-shadow 0.22s ease; }
+.switch .track::after { transition: transform 0.28s cubic-bezier(0.3, 1.4, 0.5, 1), background 0.22s ease; }
+.switch input:checked + .track { box-shadow: inset 0 0 0 1px var(--primary), 0 0 12px -3px color-mix(in srgb, var(--primary) 70%, transparent); }
+@media (max-width: 900px) { .cited-slot { margin-left: 0; } }
+
+/* Overview hero: split-flap countdown. Fixed-width tiles; flips on load and where a character changed. */
+.flaps { display: inline-flex; gap: 0.04em; }
+.flap {
+  display: inline-block; width: 0.62em; text-align: center; border-radius: 0.06em; transform-origin: 50% 50%;
+  background: linear-gradient(var(--surface-2) 0 49.4%, var(--ground) 49.4% 50.6%, var(--surface) 50.6% 100%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sheen) 5%, transparent);
+}
+.flap.flip { animation: flap-in 0.46s cubic-bezier(0.2, 0.8, 0.3, 1.1) both; animation-delay: calc(var(--fi, 0) * 60ms); }
+.rise .hero-line:not(.settled) .flap.flip { animation-delay: calc(560ms + var(--fi, 0) * 70ms); }
+.hero-line.settled .word { animation: none; }
+@keyframes flap-in { from { transform: perspective(500px) rotateX(-92deg); } 70% { transform: perspective(500px) rotateX(8deg); } to { transform: none; } }
+
+/* Magnet lines behind the hero type: faint blue segments that turn toward the pointer. */
+.hero-board { position: relative; }
+.magnet-field { position: absolute; inset: -10px 0 0 0; z-index: -1; pointer-events: none; }
+.magnet {
+  position: absolute; width: 26px; height: 2px; margin: -1px 0 0 -13px; border-radius: 1px;
+  background: color-mix(in srgb, var(--primary) 22%, var(--ground)); transform: rotate(-22deg); will-change: transform;
+}
+
+/* Case page: annotated citations. A hand-drawn underline that draws in once under each cited fact. */
+.annot { position: relative; display: inline; padding-bottom: 6px; }
+.annot-line { position: absolute; left: 0; right: 0; bottom: -4px; width: 100%; height: 9px; overflow: visible; pointer-events: none; }
+.annot-line path {
+  fill: none; stroke: var(--primary-text); stroke-width: 2; stroke-linecap: round;  /* no non-scaling-stroke: it would break the pathLength dash trick */
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+}
+.annot.drawn .annot-line path { stroke-dashoffset: 0; transition: stroke-dashoffset 0.9s cubic-bezier(0.6, 0.1, 0.3, 1); transition-delay: calc(var(--ai, 0) * 140ms); }
+.annot.instant .annot-line path { transition: none; }
+.fact-list li.cited > .annot { display: block; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flap.flip { animation: none; }
+  .annot .annot-line path { stroke-dashoffset: 0; transition: none; }
+}
+
+/* ---- final design pass, phase 5: floating depth shapes, consistency ----------------------------- */
+/* Case-folder and evidence-card outlines behind the page heroes: decorative, aria-hidden, no data.
+   Their stroke is the same faint blue tint as the magnet lines, contrast-tested under hero text. */
+.depth-shapes { position: absolute; inset: -20px 0 0 0; z-index: -1; pointer-events: none; }
+.depth-shape { position: absolute; display: block; transform: rotate(var(--rot, 0deg)); will-change: transform; }
+.depth-shape svg { display: block; width: 100%; height: auto; overflow: visible; }
+.depth-shape path, .depth-shape rect { fill: none; stroke: color-mix(in srgb, var(--primary) 22%, var(--ground)); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+@media (max-width: 900px) {
+  .depth-shape:nth-child(n+4) { display: none; }
+  .depth-shape { max-width: 22vw; }
+}
+/* Consistency: empty states read the same on every page. */
+.state p, .empty-note { color: var(--muted); font-size: 14.5px; max-width: 64ch; }
+
+/* ---- merchant events: before/after verdict and timeline entry ------------------------------------ */
+.verdict-change {
+  margin: 16px 0 2px; padding: 12px 14px; border-radius: var(--r-sm); max-width: 70ch;
+  background: var(--surface-2); border: 1px solid var(--border); border-left: 3px solid var(--primary);
+}
+.verdict-change.changed { border-left-width: 4px; }
+.vc-head { margin: 0 0 8px; font-weight: 700; color: var(--text); }
+.vc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.vc-side { display: inline-flex; align-items: center; gap: 8px; }
+.vc-risk { color: var(--muted); font-size: 14px; }
+.vc-arrow { color: var(--primary-text); font-weight: 700; }
+.vc-event { margin: 10px 0 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.case-timeline li.event .tl-dot { border-style: dashed; border-color: var(--seeded); }

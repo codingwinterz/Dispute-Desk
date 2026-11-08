@@ -6,14 +6,18 @@
   <title>DisputeDesk activity</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=Public+Sans:wght@400;600;700&display=optional">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=Public+Sans:wght@400;600;700&display=optional">
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
   <main class="narrow">
-    <h1>Activity</h1>
-    <p class="lede">What happened to each dispute, newest first: when it was detected, analyzed, edited and sent to PayPal.</p>
+    <header class="page-hero">
+      <p class="eyebrow" id="activity-eyebrow">Activity</p>
+      <h1>Activity</h1>
+      <p class="lede">What happened to each dispute, newest first: when it was detected, analyzed, edited and sent to PayPal.</p>
+      <ul class="stat-chips" id="activity-stats" aria-label="Activity counts"></ul>
+    </header>
     <p class="banner" id="error" role="alert" hidden></p>
     <div id="activity" aria-live="polite">
       <div class="state"><p>Loading activity from the local store.</p></div>

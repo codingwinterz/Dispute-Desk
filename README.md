@@ -14,7 +14,7 @@ py -3.12 -m venv .venv && .venv\Scripts\python -m pip install -r requirements.tx
 .venv\Scripts\python scripts/demo.py
 ```
 
-Then open http://127.0.0.1:8000/. (macOS/Linux: `python3.12 -m venv .venv`, then `.venv/bin/python`.)
+Then open http://127.0.0.1:8000/ (the Overview; the queue is at http://127.0.0.1:8000/queue). (macOS/Linux: `python3.12 -m venv .venv`, then `.venv/bin/python`.)
 The top bar shows **Demo data**. Buyer and merchant identifiers in the snapshot are pseudonymised.
 
 ## Full mode (your own PayPal sandbox)
@@ -138,9 +138,10 @@ refuses requests that came through the ngrok tunnel (those carry `X-Forwarded-Fo
 ## Dashboard
 
 Open http://127.0.0.1:8000/ while the app runs (local only; no build step, plain HTML/JS/CSS served
-by FastAPI, AG Grid Community from a CDN).
+by FastAPI, AG Grid Community from a CDN). The Overview is the start page; the old `/overview` link
+redirects there.
 
-- **Overview** (`/overview`): the next response deadline, counts (open disputes, amount in open
+- **Overview** (`/`): the next response deadline, counts (open disputes, amount in open
   disputes per currency, due within 72 hours, without a recommendation) and the open disputes in the
   order to answer them.
 - **Activity** (`/activity`): a timeline of what happened to each dispute (detected, analyzed, draft
@@ -152,7 +153,7 @@ by FastAPI, AG Grid Community from a CDN).
   `scripts/import_merchant_records.py --file <file>`: it validates the file (one line per problem),
   takes real transaction IDs from the stored PayPal disputes, stores the records for this page and seeds
   the graph from the same file (`--no-graph` to skip). A new import replaces the previous one.
-- **Queue** (`/`): every stored dispute with a live countdown to the seller response deadline (red
+- **Queue** (`/queue`): every stored dispute with a live countdown to the seller response deadline (red
   under 72 hours), status, recommended action, risk score and source. Search, reason and status
   filters; refreshes every 5 seconds and flashes cells that changed.
 - **Case** (`/case/{id}`): the recommendation, risk score, reasoning with the facts it cites, the draft
@@ -242,3 +243,21 @@ the poller and webhook never wait for the LLM. No PayPal write call is made.
 
 Sandbox limit: every sandbox dispute here was opened by the same test buyer, so the graph links
 disputes only through a shared device hash or IP, never through the buyer.
+
+## Merchant events (simulated new evidence)
+
+A merchant event is new evidence from the store's own systems, such as a late carrier scan. In
+production your store supplies this; in the sandbox it is simulated from a small JSON file:
+
+```bash
+.venv/Scripts/python scripts/merchant_event.py --file seed/events/yov_delivery_scan.json
+.venv/Scripts/python scripts/merchant_event.py --file seed/events/qqw_delivery_confirmation.json
+```
+
+The script finds the dispute from the event's `transaction_id` in the stored PayPal disputes and
+rejects unknown transactions (nothing is written). It adds the event to the graph as
+`source = "seeded"`, labelled "simulated merchant event", then re-runs that dispute's decision with
+the analyzer (one LLM call). The new decision is stored and the one it replaces is kept in the
+decision history. The case page shows "Merchant event received" in its timeline and, when the
+event triggered the current decision, the verdict before and after. Each event can be imported once
+(`event_id`); `--no-analyze` writes the event without re-deciding. No PayPal calls.

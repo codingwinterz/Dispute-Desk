@@ -101,7 +101,7 @@ def main() -> int:
         return 1
 
     import uvicorn
-    print(f"DisputeDesk: http://127.0.0.1:{args.port}/  (PayPal sandbox; polling every POLL_SECONDS)")
+    print(f"DisputeDesk: http://127.0.0.1:{args.port}/  (Overview; the queue is at /queue. PayPal sandbox; polling every POLL_SECONDS)")
     uvicorn.run("disputedesk.webhooks:create_app", factory=True, host="127.0.0.1", port=args.port, log_level="info")
     return 0
 

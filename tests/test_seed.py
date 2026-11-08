@@ -12,6 +12,8 @@ REAL = {
     "PP-R-YOV-10196864": ("MERCHANDISE_OR_SERVICE_NOT_RECEIVED", "50.00"),
     "PP-R-QQW-10196399": ("MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED", "40.00"),
     "PP-R-IQA-10196863": ("MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED", "10.00"),
+    "PP-R-CTG-10197156": ("MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED", "12.00"),
+    "PP-R-WZR-10197157": ("MERCHANDISE_OR_SERVICE_NOT_RECEIVED", "27.00"),
 }
 
 
@@ -32,8 +34,21 @@ def linked_count(data, dispute_id):
     return sum(o["device_hash"] == tel["device_hash"] or o["ip"] == tel["ip"] for o in others)
 
 
-def test_seed_covers_the_four_real_disputes(data):
+def test_seed_covers_the_real_disputes(data):
     assert set(data["disputes"]) == set(REAL)
+
+
+def test_ctg_and_wzr_records_match_their_scenarios(data):
+    d = data["disputes"]
+    ctg, wzr = d["PP-R-CTG-10197156"], d["PP-R-WZR-10197157"]
+    assert ctg["shipment"]["status"] == "DELIVERED" and ctg["shipment"]["signed_by_buyer"] is False
+    assert wzr["shipment"]["status"] == "DELIVERED" and wzr["shipment"]["signed_by_buyer"] is True
+    for dispute_id in ("PP-R-CTG-10197156", "PP-R-WZR-10197157"):
+        assert d[dispute_id]["telemetry"] and linked_count(data, dispute_id) == 0  # a device record, no links
+    # Full timestamps: the sandbox transactions were created minutes before the import (17:07:43Z, 17:08:09Z),
+    # so a bare date would mean midnight, before the transaction.
+    assert ctg["shipment"]["shipped_at"] == "2026-11-08T17:09:00Z" and ctg["shipment"]["delivered_at"] == "2026-11-08T17:16:00Z"
+    assert wzr["shipment"]["shipped_at"] == "2026-11-08T17:10:00Z" and wzr["shipment"]["delivered_at"] == "2026-11-08T17:18:00Z"
 
 
 def test_scenarios_differ(data):

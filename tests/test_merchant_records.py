@@ -16,7 +16,8 @@ from tests.fakes import FakeGraph, sample_dispute
 
 ROOT = Path(__file__).resolve().parent.parent
 SEED = ROOT / "seed" / "merchant_data.json"
-REAL_IDS = ("PP-R-JTQ-10195324", "PP-R-YOV-10196864", "PP-R-QQW-10196399", "PP-R-IQA-10196863")
+REAL_IDS = ("PP-R-JTQ-10195324", "PP-R-YOV-10196864", "PP-R-QQW-10196399", "PP-R-IQA-10196863",
+            "PP-R-CTG-10197156", "PP-R-WZR-10197157")
 
 
 def stored(missing=()):
@@ -58,7 +59,7 @@ def test_store_and_view_group_records_by_transaction(tmp_path):
     store.replace_all(rows)  # re-import replaces, never duplicates
     view = records_view(store.rows(), stored())
     assert view["note"] == NOTE and view["input_file"] == "merchant_data.json"
-    assert len(view["transactions"]) == 4 and len(view["past_disputes"]) == 3
+    assert len(view["transactions"]) == 6 and len(view["past_disputes"]) == 3
     qqw = next(t for t in view["transactions"] if t["dispute_id"] == "PP-R-QQW-10196399")
     assert qqw["transaction_source"] == "paypal" and qqw["shipment"]["source"] == "seeded"
     assert qqw["telemetry"]["device_hash"] == "dev-9e0d55" and qqw["dispute"]["source"] == "paypal"
@@ -90,8 +91,8 @@ def test_script_imports_without_graph(script_db, monkeypatch, capsys):
     monkeypatch.setattr("sys.argv", ["import", "--file", str(SEED), "--no-graph"])
     assert script.main() == 0
     out = capsys.readouterr().out
-    assert "stored 11 record(s)" in out and "graph not updated" in out
-    assert len(MerchantRecordStore(db).rows()) == 11 and router.calls.call_count == 0
+    assert "stored 15 record(s)" in out and "graph not updated" in out
+    assert len(MerchantRecordStore(db).rows()) == 15 and router.calls.call_count == 0
 
 
 def test_script_seeds_the_graph_from_the_same_file(script_db, monkeypatch, capsys):
@@ -113,7 +114,7 @@ def test_script_reports_a_stopped_graph_with_the_fix(script_db, monkeypatch, cap
     assert script.main() == 1
     out = capsys.readouterr().out
     assert "records were stored" in out and "docker compose up -d falkordb" in out
-    assert len(MerchantRecordStore(db).rows()) == 11  # still stored for the page
+    assert len(MerchantRecordStore(db).rows()) == 15  # still stored for the page
 
 
 def test_script_rejects_a_bad_file(script_db, tmp_path, monkeypatch, capsys):
@@ -136,7 +137,7 @@ def test_api_and_page(tmp_path):
     client = TestClient(webhooks.create_app(verifier=object(), store=webhooks.EventStore(tmp_path / "l"), dispute_store=d))
     body = client.get("/api/merchant-records").json()
     assert body["note"] == "In production your store supplies this; in the sandbox it is simulated."
-    assert len(body["transactions"]) == 4
+    assert len(body["transactions"]) == 6
     page = client.get("/merchant-records")
     assert page.status_code == 200 and "In production your store supplies this; in the sandbox it is simulated." in page.text
     assert client.get("/merchant-records", headers={"X-Forwarded-For": "203.0.113.7"}).status_code == 403
@@ -161,10 +162,10 @@ def test_demo_snapshot_carries_merchant_records(tmp_path, monkeypatch):
     rows, _ = import_records(parse_file(SEED), stored(), "merchant_data.json")
     MerchantRecordStore(db).replace_all(rows)
     snap, mapping = export_snapshot(db)
-    assert len(snap["merchant_records"]) == 11 and scan(snap, list(mapping)) == []
+    assert len(snap["merchant_records"]) == 15 and scan(snap, list(mapping)) == []
     path = tmp_path / "snap.json"
     path.write_text(json.dumps(snap), encoding="utf-8")
     monkeypatch.setenv("DEMO_SNAPSHOT", str(path))
     with TestClient(webhooks.create_app(demo=True)) as client:
         body = client.get("/api/merchant-records").json()
-        assert len(body["transactions"]) == 4 and len(body["past_disputes"]) == 3
+        assert len(body["transactions"]) == 6 and len(body["past_disputes"]) == 3
