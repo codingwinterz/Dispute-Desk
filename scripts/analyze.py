@@ -22,6 +22,16 @@ from disputedesk.graph import GraphStore, connect, context_to_facts  # noqa: E40
 from disputedesk.policies import PolicyStore  # noqa: E402
 
 
+GRAPH_FIX = "      Fix: docker compose up -d falkordb   then   python scripts/seed_graph.py"
+
+
+def hint(status: str) -> str:
+    """The status line, plus the fix when the graph is the problem."""
+    if str(status).startswith(("graph_unavailable", "no_graph_context")):
+        return "\n".join([f"  {status}", GRAPH_FIX])
+    return f"  {status}"
+
+
 def print_decision(rec: dict) -> None:
     if rec["status"] != "ok":
         print(f"  ERROR {rec['error']} (model {rec['model']}, attempts {rec['attempts']})")
@@ -54,7 +64,7 @@ def main() -> int:
             if args.facts_only:
                 status, ctx = analyzer.context(dispute_id)
                 if ctx is None:
-                    print(f"  {status}")
+                    print(hint(status))
                     failed = True
                     continue
                 for f in context_to_facts(ctx):
@@ -68,7 +78,7 @@ def main() -> int:
             if rec and outcome not in ("missing", "waiting_for_full_details"):
                 print_decision(rec)
             else:
-                print(f"  {outcome}")
+                print(hint(outcome))
             failed |= not rec or rec["status"] != "ok"
     finally:
         disputes.close()

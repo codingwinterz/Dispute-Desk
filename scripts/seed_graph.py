@@ -34,6 +34,7 @@ def main() -> int:
             print(line)
     except Exception as exc:  # the client raises redis.exceptions.*, not the builtin ConnectionError
         print(f"FAIL: FalkorDB at {settings.falkordb_host}:{settings.falkordb_port}: {type(exc).__name__}")
+        print("      Fix: docker compose up -d falkordb")
         return 1
     finally:
         store.close()

@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import shutil
+import sys
 import tempfile
 import threading
 from collections.abc import AsyncIterator
@@ -180,7 +181,13 @@ def create_app(
         log.info("demo mode: %d disputes from the snapshot; no PayPal, LLM or graph access", len(snapshot["disputes"]))
     settings: Settings | None = None
     if verifier is None:
-        settings = load_settings()
+        try:
+            settings = load_settings()
+        except RuntimeError as exc:
+            # A setup problem, not a crash: one clear line with the fix instead of a stack trace.
+            log.error("DisputeDesk can't start: %s", exc)
+            print(f"DisputeDesk can't start: {exc}", file=sys.stderr)
+            raise SystemExit(1) from None
         secrets = (settings.client_id, settings.client_secret)
         http = make_client(LOG_DIR / "webhook_http.jsonl", secrets)
         verifier = PayPalSignatureVerifier(settings, TokenProvider(settings, http), http)
