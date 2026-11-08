@@ -42,7 +42,11 @@ class Settings:
 
 
 def load_settings(env_file: Path | None = None) -> Settings:
-    load_dotenv(env_file or PROJECT_ROOT / ".env")
+    path = env_file or PROJECT_ROOT / ".env"
+    if not path.exists() and not os.getenv("PAYPAL_CLIENT_ID"):
+        raise RuntimeError("there is no .env file. Fix: copy .env.example .env and fill it in "
+                           "(or run python scripts/demo.py for demo mode, which needs no .env)")
+    load_dotenv(path)
     missing = [
         name
         for name in ("PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_WEBHOOK_ID")
@@ -50,7 +54,8 @@ def load_settings(env_file: Path | None = None) -> Settings:
     ]
     if missing:
         # Only the variable names are reported, never their values.
-        raise RuntimeError(f"missing environment variables: {', '.join(missing)}")
+        raise RuntimeError(f"missing environment variables: {', '.join(missing)}. "
+                           "Fix: fill them in .env (see .env.example), or run python scripts/demo.py for demo mode")
     try:
         poll_seconds = float(os.getenv("POLL_SECONDS") or DEFAULT_POLL_SECONDS)
         if not poll_seconds > 0:

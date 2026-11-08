@@ -94,7 +94,7 @@ def test_webhook_stays_public_through_the_tunnel(client):
 # --- pages -------------------------------------------------------------------------------------
 
 def test_pages_and_assets_are_served_locally(client):
-    for path, marker in [("/", 'id="grid"'), ("/case/PP-R-ANY", 'id="case"'), ("/static/app.css", "--accent"),
+    for path, marker in [("/", 'id="grid"'), ("/case/PP-R-ANY", 'id="case"'), ("/static/app.css", "--primary"),
                          ("/static/common.js", "renderNav"), ("/static/queue.js", "createGrid"),
                          ("/static/case.js", "graphPanel")]:
         resp = client.get(path)
@@ -147,3 +147,85 @@ def test_old_decisions_get_fact_refs_from_their_graph_snapshot(client, stores):
     assert facts[0]["ref"] == "dispute"
     assert "ref" not in facts[1]  # text mismatch: no guess
     assert facts[4]["ref"] == "shipment"
+
+
+def test_pages_and_assets_always_revalidate(client):
+    for path in ("/", "/policies", "/case/PP-R-ANY", "/static/case.js", "/static/graph3d.js"):
+        assert client.get(path).headers["cache-control"] == "no-cache", path
+    assert "cache-control" not in client.get("/api/disputes").headers  # API responses unchanged
+
+
+def test_case_page_loads_pinned_three_with_sri_and_flat_fallback():
+    html = (WEB / "case.html").read_text(encoding="utf-8")
+    assert 'src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"' in html
+    assert 'integrity="sha512-' in html and 'crossorigin="anonymous"' in html
+    assert html.index("three.min.js") < html.index("graph3d.js") < html.index("case.js")
+    js = (WEB / "static" / "graph3d.js").read_text(encoding="utf-8")
+    assert "prefers-reduced-motion" in js and "forceContextLoss" in js and "visibilitychange" in js
+    case_js = (WEB / "static" / "case.js").read_text(encoding="utf-8")
+    assert "unavailableReason" in case_js and '"pagehide", disposeGraph' in case_js
+
+
+def test_overview_page_is_served_local_only_and_in_nav(client):
+    resp = client.get("/overview")
+    assert resp.status_code == 200 and 'id="overview"' in resp.text and resp.headers["cache-control"] == "no-cache"
+    assert client.get("/overview", headers=TUNNEL).status_code == 403
+    common = client.get("/static/common.js").text
+    assert '["overview", "/overview", "Overview"]' in common
+    assert "fetch(\"/api/disputes\"" in client.get("/static/overview.js").text  # existing API only
+
+
+@pytest.mark.parametrize("path,marker,script", [("/activity", 'id="activity"', "activity.js"),
+                                                ("/insights", 'id="insights"', "insights.js")])
+def test_activity_and_insights_pages(client, path, marker, script):
+    resp = client.get(path)
+    assert resp.status_code == 200 and marker in resp.text and resp.headers["cache-control"] == "no-cache"
+    assert client.get(path, headers=TUNNEL).status_code == 403
+    js = client.get(f"/static/{script}").text
+    # Built from the existing read-only API only; never writes.
+    assert "/api/disputes" in js and "method:" not in js and '"PUT"' not in js and '"POST"' not in js
+
+
+def test_nav_lists_only_working_pages_and_a_skip_link():
+    common = (WEB / "static" / "common.js").read_text(encoding="utf-8")
+    for key in ("overview", "queue", "activity", "insights", "records", "policies"):
+        assert f'["{key}", ' in common
+    assert "COMING_SOON" not in common and "Coming soon" not in common
+    assert '"Skip to content"' in common
+
+
+def test_queue_reason_line_uses_existing_read_only_api_and_leaves_columns_alone():
+    js = (WEB / "static" / "queue.js").read_text(encoding="utf-8")
+    assert "onCellMouseOver" in js and "onCellFocused" in js
+    # Through the shared, cached helper, which reads the existing GET /api/decisions/{id} only.
+    assert "DD.topReason(row)" in js and '"method"' not in js and "fetch(`/api/decisions/" not in js
+    common = (WEB / "static" / "common.js").read_text(encoding="utf-8")
+    assert "fetch(`/api/decisions/${encodeURIComponent(row.dispute_id)}`" in common and "reasoning[0]" in common
+    headers = [h for h in ("Respond within", "Dispute", "Reason", "Amount", "Status", "Recommended", "Risk", "Source")]
+    assert all(f'headerName: "{h}"' in js for h in headers) and js.count("headerName:") == len(headers)
+
+
+def test_case_timeline_uses_stored_timestamps_only():
+    js = (WEB / "static" / "case.js").read_text(encoding="utf-8")
+    body = js.split("function caseTimeline", 1)[1].split("function disposeGraph", 1)[0]
+    assert "fetch(" not in body  # built from the case response already loaded
+    for stamp in ("detected_at", "created_at", "updated_at", "started_at", "finished_at"):
+        assert stamp in body
+
+
+def test_contrast_tokens_meet_wcag():
+    css = (WEB / "static" / "app.css").read_text(encoding="utf-8")
+    def lum(h):
+        r, g, b = (int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))
+        f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4  # noqa: E731
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+    def ratio(a, b):
+        hi, lo = sorted((lum(a), lum(b)), reverse=True)
+        return (hi + 0.05) / (lo + 0.05)
+    tokens = dict(re.findall(r"--([a-z0-9-]+):\s*(#[0-9a-f]{6})", css))
+    surfaces = [tokens[k] for k in ("ground-deep", "ground", "surface", "surface-2")]
+    for text in ("text", "muted", "primary-text", "splash", "danger", "placeholder"):
+        assert min(ratio(tokens[text], s) for s in surfaces) >= 4.5, text
+    assert min(ratio(tokens["control-edge"], s) for s in surfaces) >= 3.5
+    assert ratio(tokens["on-primary"], tokens["primary-fill"]) >= 4.5
+    assert ratio(tokens["on-splash"], tokens["splash"]) >= 4.5

@@ -110,7 +110,8 @@ class Analyzer:
             ctx = graph.dispute_context(dispute_id)
         except Exception as exc:
             self._graph = None  # reconnect next time
-            log.warning("graph unavailable for dispute=%s: %s", dispute_id, type(exc).__name__)
+            log.warning("graph unavailable for dispute=%s: %s (is FalkorDB running? start it with: "
+                        "docker compose up -d falkordb)", dispute_id, type(exc).__name__)
             return f"graph_unavailable:{type(exc).__name__}", None
         return ("ok", ctx) if ctx else ("no_graph_context", None)
 

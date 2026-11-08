@@ -25,7 +25,7 @@
       headerName: "Respond within", field: "seller_response_due_date", sort: "asc", minWidth: 170, flex: 1.1,
       // The value is the due date itself (it never changes), so the 1-second ticker in common.js
       // updates the text without making AG Grid flash the cell.
-      cellRenderer: (p) => DD.countdownNode(p.value),
+      cellRenderer: (p) => DD.deadlineNode(p.data),
       comparator: (a, b) => (Date.parse(a) || Infinity) - (Date.parse(b) || Infinity),
       getQuickFilterText: () => "",
     },
@@ -41,7 +41,7 @@
     },
     {
       headerName: "Status", field: "status", minWidth: 200, flex: 1.2, enableCellChangeFlash: true,
-      cellRenderer: (p) => el("span", { class: `badge ${DD.statusClass(p.value)}`, text: DD.statusLabel(p.value) }),
+      cellRenderer: (p) => DD.statusBadge(p.value),
       getQuickFilterText: (p) => p.data.status_label,
     },
     {
@@ -61,7 +61,46 @@
 
   const emptyCopy = "No disputes yet. When a buyer opens one in the PayPal sandbox, the poller picks it up within 10 seconds and it appears here.";
 
-  const grid = agGrid.createGrid(document.getElementById("grid"), {
+  // Main reason on hover/focus: an overlay outside AG Grid's rows (columns and rendering untouched).
+  // Reads the existing GET /api/decisions/{id} once per dispute and decision; nothing is fetched for
+  // rows without a recommendation, and nothing is shown when there is no stored reason.
+  const gridEl = document.getElementById("grid");
+  const stage = el("div", { class: "grid-stage" });
+  gridEl.parentNode.insertBefore(stage, gridEl);
+  const reasonLine = el("div", { class: "row-reason", role: "status", "aria-live": "polite", hidden: true });
+  stage.append(gridEl, reasonLine);
+  let reasonFor = null, hoverTimer = 0;
+  // The same cached main reason the Overview cards and the case page use (DD.topReason).
+  const topReason = (row) => DD.topReason(row);
+
+  function hideReason() { reasonFor = null; reasonLine.hidden = true; }
+
+  async function showReason(row, rowEl) {
+    if (!row || !rowEl) return hideReason();
+    reasonFor = row.dispute_id;
+    const text = await topReason(row);
+    if (reasonFor !== row.dispute_id) return;   // the pointer moved on while fetching
+    if (!text) return hideReason();
+    const top = rowEl.getBoundingClientRect().bottom - stage.getBoundingClientRect().top;
+    reasonLine.replaceChildren(el("span", { class: "row-reason-label", text: "Main reason" }), el("span", { class: "row-reason-text", text }));
+    reasonLine.style.top = `${top}px`;
+    reasonLine.hidden = false;
+  }
+
+  // The 5-second refresh re-renders rows: keep the line on the same dispute and move it with the row,
+  // or hide it if that row is no longer shown (filtered out, or gone).
+  function keepReason() {
+    if (!reasonFor || reasonLine.hidden) return;
+    const node = grid.getRowNode(reasonFor);
+    const rowEl = node && node.displayed && node.rowIndex !== null ? rowElementFor(node.rowIndex) : null;
+    if (!rowEl) return hideReason();
+    reasonLine.style.top = `${rowEl.getBoundingClientRect().bottom - stage.getBoundingClientRect().top}px`;
+  }
+
+  const rowElementFor = (rowIndex) =>
+    stage.querySelector(`.ag-center-cols-container .ag-row[row-index="${rowIndex}"]`);
+
+  const grid = agGrid.createGrid(gridEl, {
     columnDefs,
     rowData: null, // shows the loading overlay until the first response
     getRowId: (p) => p.data.dispute_id,
@@ -76,7 +115,18 @@
     doesExternalFilterPass: (node) =>
       (!filters.reason || node.data.reason === filters.reason) &&
       (!filters.status || node.data.status === filters.status),
-    onModelUpdated: () => updateCount(),
+    onModelUpdated: () => { updateCount(); keepReason(); },
+    onCellMouseOver: (e) => {
+      clearTimeout(hoverTimer);
+      const rowEl = e.event && e.event.target && e.event.target.closest(".ag-row");
+      hoverTimer = setTimeout(() => showReason(e.data, rowEl), 120);
+    },
+    onCellFocused: (e) => {
+      if (e.rowIndex === null || e.rowIndex === undefined) return hideReason();
+      const node = grid.getDisplayedRowAtIndex(e.rowIndex);
+      showReason(node && node.data, rowElementFor(e.rowIndex));
+    },
+    onBodyScroll: () => hideReason(),
   });
 
   function updateCount() {
@@ -95,22 +145,31 @@
     }
   }
 
+  // Heading and subline count with the same definition as the Overview hero (DD.groupDisputes).
   function updateSummary() {
-    const open = rows.filter((r) => r.status !== "RESOLVED");
-    const next = open.map((r) => r.seller_response_due_date).filter(Boolean).sort()[0];
+    const { waiting, withPayPal, withBuyer } = DD.groupDisputes(rows);
+    const title = document.getElementById("queue-title");
     const summary = document.getElementById("summary");
+    const n = waiting.length;
+    title.textContent = n ? `${n} ${n === 1 ? "dispute" : "disputes"} waiting on you` : "Nothing waiting on you";
     if (!rows.length) {
-      summary.textContent = "Nothing to answer right now.";
+      summary.textContent = "No disputes in the local store yet.";
       return;
     }
-    const pending = rows.filter((r) => !r.decision).length;
-    summary.replaceChildren(
-      `${open.length} open ${open.length === 1 ? "dispute" : "disputes"}. `,
-      next ? "Next response due in " : "",
-      next ? el("span", { class: "num", "data-due": next }, el("span", { class: "cd-main", text: DD.countdown(next).text })) : "",
-      next ? ". " : "",
-      pending ? `${pending} still being analyzed.` : "Every dispute has a recommendation.",
-    );
+    const next = waiting.map((r) => r.seller_response_due_date).filter(Boolean).sort()[0];
+    const pending = waiting.filter((r) => !r.decision || r.decision.status !== "ok").length;
+    const parts = [];
+    if (n) parts.push(`${n} waiting on you. `);
+    if (withPayPal.length) parts.push(`${withPayPal.length} with PayPal. `);
+    if (withBuyer.length) parts.push(`${withBuyer.length} waiting on the buyer. `);
+    if (next) {
+      parts.push("Next response due in ",
+        el("span", { class: "num", "data-due": next }, el("span", { class: "cd-main", text: DD.countdown(next).text })),
+        DD.mode.demo ? `, as of ${DD.recordedLabel().split(",")[0]}. ` : ". ");
+    }
+    if (n) parts.push(pending ? `${pending} still being analyzed.` : "Every waiting dispute has a recommendation.");
+    else if (!withPayPal.length && !withBuyer.length) parts.push("Nothing to answer right now.");
+    summary.replaceChildren(...parts);
   }
 
   async function refresh() {
@@ -121,7 +180,9 @@
       if (!resp.ok) throw new Error(`The server answered HTTP ${resp.status}. Retrying every 5 seconds.`);
       const body = await resp.json();
       rows = (body.disputes || []).map(flat);
+      await DD.modeReady;
       loaded = true;
+      DD.live(true);
       banner.hidden = true;
       // With getRowId, AG Grid diffs the rows and flashes only the cells whose values changed.
       grid.setGridOption("rowData", rows);
@@ -130,6 +191,7 @@
       updateSummary();
       updateCount();
     } catch (err) {
+      DD.live(false);
       banner.textContent = err instanceof TypeError
         ? "Can't reach the DisputeDesk server. Is uvicorn still running? Retrying every 5 seconds."
         : err.message;
@@ -137,6 +199,8 @@
       if (!loaded) grid.setGridOption("rowData", []);
     }
   }
+
+  stage.addEventListener("mouseleave", () => { clearTimeout(hoverTimer); hideReason(); });
 
   document.getElementById("search").addEventListener("input", (e) => grid.setGridOption("quickFilterText", e.target.value));
   for (const key of ["reason", "status"]) {

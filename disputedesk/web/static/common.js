@@ -17,14 +17,191 @@ const DD = (() => {
     return node;
   }
 
-  function renderNav(current) {
-    const links = [["queue", "/", "Queue"], ["policies", "/policies", "Policies"]];
-    const nav = el("nav", { class: "site-nav", "aria-label": "Main" },
+  // ---- app shell: sidebar + top bar --------------------------------------------------
+  // Only working pages are listed.
+  const PAGES = { overview: "Overview", queue: "Dispute queue", activity: "Activity", insights: "Insights", records: "Merchant records", policies: "Dispute policies", case: "Case" };
+
+  function renderNav(current, title) {
+    const links = [["overview", "/overview", "Overview"], ["queue", "/", "Queue"], ["activity", "/activity", "Activity"],
+                   ["insights", "/insights", "Insights"], ["records", "/merchant-records", "Merchant records"],
+                   ["policies", "/policies", "Policies"]];
+    const sidebar = el("aside", { class: "sidebar" },
       el("a", { class: "brand", href: "/" }, el("span", { class: "tab", "aria-hidden": "true" }), "DisputeDesk"),
-      el("div", { class: "links" }, ...links.map(([key, href, label]) =>
-        el("a", { href, "aria-current": key === current ? "page" : null, text: label }))),
-      el("span", { class: "env", text: "PayPal sandbox" }));
-    document.body.prepend(nav);
+      el("nav", { class: "side-links", "aria-label": "Main" }, ...links.map(([key, href, label]) =>
+        el("a", { href, "aria-current": key === current ? "page" : null, text: label }))));
+    const live = el("span", { class: "live", id: "live", role: "status", "aria-live": "polite" },
+      el("span", { class: "dot", "aria-hidden": "true" }),
+      el("span", { class: "live-label", text: "Connecting" }),
+      el("span", { class: "live-age num" }));
+    const topbar = el("header", { class: "topbar" },
+      el("span", { class: "topbar-title", text: title || PAGES[current] || "DisputeDesk" }),
+      el("div", { class: "topbar-status" }, live,
+        el("span", { class: "env", title: "Every call goes to api-m.sandbox.paypal.com; there are no live credentials.", text: "PayPal sandbox" })));
+    document.body.classList.add("shell");
+    // Keyboard users can jump past the sidebar to the page content.
+    const main = document.querySelector("main");
+    if (main) { main.id = main.id || "content"; main.tabIndex = -1; }
+    const skip = el("a", { class: "skip-link", href: `#${main ? main.id : "content"}`, text: "Skip to content" });
+    document.body.prepend(skip, sidebar, topbar);
+    modeReady.then((m) => {
+      if (!m.demo) return;
+      const recorded = m.recorded_at ? new Date(m.recorded_at).toLocaleString() : "an earlier session";
+      topbar.querySelector(".topbar-status").prepend(el("span", { class: "demo-badge", title: `Recorded sandbox data from ${recorded}. Nothing is sent to PayPal.`, text: "Demo data" }));
+      document.body.classList.add("is-demo");
+    });
+  }
+
+  // Demo mode (GET /api/mode): pages await this before drawing write controls, so a button never
+  // flashes enabled before the mode is known. Any failure is treated as normal (non-demo) mode;
+  // the server refuses writes in demo mode regardless.
+  const DEMO_LABEL = "Demo mode: recorded sandbox data";
+  const modeReady = fetch("/api/mode", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : { demo: false }))
+    .catch(() => ({ demo: false }));
+  const mode = { demo: false };
+  modeReady.then((m) => { mode.demo = Boolean(m.demo); mode.recorded_at = m.recorded_at; });
+
+  // Live indicator: pages report each request to the local server. "Live" (pulsing) only while the
+  // last request succeeded; "Offline" (red, still) after a failure. Shows how long ago it last answered.
+  let lastOk = 0;
+  function live(ok) {
+    const node = document.getElementById("live");
+    if (!node) return;
+    if (ok) lastOk = Date.now();
+    node.classList.toggle("is-live", ok);
+    node.classList.toggle("is-offline", !ok);
+    node.querySelector(".live-label").textContent = ok ? "Live" : "Offline";
+    updateAge();
+  }
+  function ageText() {
+    if (!lastOk) return "";
+    const s = Math.max(0, Math.round((Date.now() - lastOk) / 1000));
+    return s < 2 ? "updated just now" : s < 120 ? `updated ${s}s ago` : `updated ${Math.round(s / 60)} min ago`;
+  }
+  function updateAge() {
+    const text = ageText();
+    for (const node of document.querySelectorAll("#live .live-age, [data-live-age]")) {
+      if (node.textContent !== text) node.textContent = text;
+    }
+  }
+
+  // ---- the agent's main reason (read-only, cached) -----------------------------------------
+  // From the existing GET /api/decisions/{id}; fetched once per dispute and decision, and only for
+  // disputes with a recommendation. Resolves to "" when there is no stored reason.
+  const reasonCache = new Map();  // dispute_id -> { key, promise }
+  function topReason(row) {
+    const d = row && row.decision;
+    if (!d || d.status !== "ok") return Promise.resolve("");
+    const cached = reasonCache.get(row.dispute_id);
+    if (cached && cached.key === d.created_at) return cached.promise;
+    const promise = fetch(`/api/decisions/${encodeURIComponent(row.dispute_id)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => {
+        const first = body && body.decision && body.decision.reasoning && body.decision.reasoning[0];
+        return first ? first.point : "";
+      })
+      .catch(() => "");
+    reasonCache.set(row.dispute_id, { key: d.created_at, promise });
+    return promise;
+  }
+
+  // Caption metadata: "PP-R-QQW . due Nov 15" plus the record's source tag.
+  function caseCaption(row) {
+    const shortId = String(row.dispute_id).split("-").slice(0, 3).join("-");
+    const due = row.seller_response_due_date ? `due ${dueDate(row.seller_response_due_date).split(",")[0]}`
+      : row.status === "UNDER_REVIEW" ? "with PayPal" : "no due date";
+    return el("span", { class: "cap" }, shortId, el("span", { class: "sep", text: "." }), due,
+      el("span", { class: "sep", text: "." }), sourceTag(row.source));
+  }
+
+  // ---- palette tokens --------------------------------------------------------------------
+  // Colours live only in app.css :root. Scripts (three.js, canvas labels, the favicon) read them here.
+  // A probe element resolves each token through the browser, so color-mix() and any other CSS colour
+  // syntax arrive as plain numbers that three.js and canvas understand.
+  const colorCache = new Map();
+  let probe = null;
+  function resolveColor(name) {
+    if (colorCache.has(name)) return colorCache.get(name);
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    if (!raw) {
+      console.error(`DisputeDesk: colour token ${name} is not defined in the :root block of app.css.`);
+      return { r: 128, g: 128, b: 128, a: 1 };  // visible grey, not a crash
+    }
+    if (!probe) {
+      probe = document.createElement("span");
+      probe.setAttribute("aria-hidden", "true");
+      probe.style.cssText = "position:absolute;width:0;height:0;overflow:hidden;pointer-events:none;";
+      document.documentElement.append(probe);
+    }
+    probe.style.color = "";
+    probe.style.color = `var(${name})`;
+    const parsed = parseColor(getComputedStyle(probe).color);
+    if (!parsed) {
+      console.error(`DisputeDesk: colour token ${name} (${raw}) could not be resolved to a colour.`);
+      return { r: 128, g: 128, b: 128, a: 1 };
+    }
+    colorCache.set(name, parsed);
+    return parsed;
+  }
+  // Computed colours come back as rgb()/rgba(), or as color(srgb r g b / a) for color-mix() results.
+  function parseColor(text) {
+    let m = text.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/);
+    if (m) return { r: +m[1], g: +m[2], b: +m[3], a: alpha(m[4]) };
+    m = text.match(/^color\(srgb\s+([\d.e-]+)\s+([\d.e-]+)\s+([\d.e-]+)(?:\s*\/\s*([\d.]+%?))?\s*\)$/);
+    if (m) return { r: Math.round(+m[1] * 255), g: Math.round(+m[2] * 255), b: Math.round(+m[3] * 255), a: alpha(m[4]) };
+    return null;
+  }
+  const alpha = (v) => (v === undefined ? 1 : v.endsWith("%") ? parseFloat(v) / 100 : +v);
+  const hex2 = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
+  /** "#rrggbb" for a token such as "--primary". */
+  function color(name) {
+    const c = resolveColor(name);
+    return `#${hex2(c.r)}${hex2(c.g)}${hex2(c.b)}`;
+  }
+  /** "rgba(r, g, b, a)" for a token, with its own alpha multiplied by `a`. */
+  function rgba(name, a = 1) {
+    const c = resolveColor(name);
+    return `rgba(${c.r}, ${c.g}, ${c.b}, ${+(c.a * a).toFixed(3)})`;
+  }
+  /** 0xRRGGBB for three.js. */
+  function colorNum(name) {
+    const c = resolveColor(name);
+    return (Math.round(c.r) << 16) | (Math.round(c.g) << 8) | Math.round(c.b);
+  }
+
+  // The favicon follows the palette: the folder mark drawn from the tokens (static file as a fallback).
+  function paintFavicon() {
+    const link = document.querySelector('link[rel="icon"]');
+    if (!link) return;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="${color("--ground-deep")}"/>`
+      + `<path fill="${color("--primary")}" d="M5 12.4h9.6L17.4 7H27v18.6H5z"/></svg>`;
+    link.href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  }
+  paintFavicon();
+
+  // ---- motion helpers --------------------------------------------------------------------
+  const reducedMotion = () => Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  // Pause every CSS animation while the tab is hidden.
+  document.addEventListener("visibilitychange", () => document.documentElement.classList.toggle("is-hidden", document.hidden));
+
+  // Scroll reveal, once per element. Content is visible by default: only elements below the fold are
+  // hidden, and only when motion is allowed and IntersectionObserver exists, so nothing can stay blank.
+  function reveal(nodes) {
+    if (reducedMotion() || !("IntersectionObserver" in window)) return;
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        e.target.classList.add("is-revealed");
+        e.target.classList.remove("reveal-pending");
+        io.unobserve(e.target);
+      }
+    }, { rootMargin: "0px 0px -8% 0px" });
+    for (const n of nodes) {
+      if (!n || n.getBoundingClientRect().top < window.innerHeight) continue;  // already on screen
+      n.classList.add("reveal-pending");
+      io.observe(n);
+    }
   }
 
   // PayPal enums -> plain words. Unknown values fall back to a readable form, never dropped.
@@ -44,9 +221,9 @@ const DD = (() => {
   };
   const STATUSES = {
     OPEN: ["Open", "waiting"],
-    WAITING_FOR_SELLER_RESPONSE: ["Waiting for your response", "waiting"],
-    WAITING_FOR_BUYER_RESPONSE: ["Waiting for buyer", "review"],
-    UNDER_REVIEW: ["PayPal is reviewing", "review"],
+    WAITING_FOR_SELLER_RESPONSE: ["Waiting on you", "waiting"],
+    WAITING_FOR_BUYER_RESPONSE: ["Waiting on the buyer", "review"],
+    UNDER_REVIEW: ["With PayPal", "review"],
     RESOLVED: ["Resolved", "resolved"],
     OTHER: ["Other", ""],
   };
@@ -54,6 +231,16 @@ const DD = (() => {
   const reasonLabel = (r) => REASONS[r] || words(r);
   const statusLabel = (s) => (STATUSES[s] || [words(s), ""])[0];
   const statusClass = (s) => (STATUSES[s] || ["", ""])[1];
+  // The longer meaning behind each short label, shown as a tooltip on every status badge.
+  const STATUS_HELP = {
+    WAITING_FOR_SELLER_RESPONSE: "PayPal is waiting for your response before the deadline.",
+    UNDER_REVIEW: "Under review by PayPal. Nothing for you to answer for now.",
+    WAITING_FOR_BUYER_RESPONSE: "PayPal is waiting for the buyer's response.",
+    RESOLVED: "PayPal has closed this dispute.",
+  };
+  function statusBadge(status) {
+    return el("span", { class: `badge ${statusClass(status)}`, title: STATUS_HELP[status] || null, text: statusLabel(status) });
+  }
   const stageLabel = (s) => ({ INQUIRY: "Inquiry", CHARGEBACK: "Chargeback", PRE_ARBITRATION: "Pre-arbitration", ARBITRATION: "Arbitration" }[s] || words(s));
 
   function money(amount) {
@@ -66,8 +253,20 @@ const DD = (() => {
     }
   }
 
+  // One clock for every countdown. In demo mode the data is a recording, so countdowns are frozen at
+  // the snapshot's recorded time (and labelled with it) instead of running against today's date.
+  function clock() {
+    return mode.demo && mode.recorded_at ? Date.parse(mode.recorded_at) : Date.now();
+  }
+
+  function recordedLabel() {
+    return mode.demo && mode.recorded_at
+      ? new Date(mode.recorded_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+      : "";
+  }
+
   // "2d 4h", "5h 12m", "42m 10s"; overdue says so.
-  function countdown(dueIso, now = Date.now()) {
+  function countdown(dueIso, now = clock()) {
     if (!dueIso) return { text: "No due date", urgent: false };
     const ms = Date.parse(dueIso) - now;
     if (Number.isNaN(ms)) return { text: "No due date", urgent: false };
@@ -85,27 +284,57 @@ const DD = (() => {
 
   // Any element with data-due shows a live countdown; one ticker updates them all.
   function tick() {
-    const now = Date.now();
+    updateAge();
+    if (document.hidden) return;  // nothing to update while the tab is in the background
+    const now = clock();
     for (const node of document.querySelectorAll("[data-due]")) {
       const c = countdown(node.dataset.due, now);
       const main = node.querySelector(".cd-main") || node;
       if (main.textContent !== c.text) main.textContent = c.text;
       node.classList.toggle("urgent", c.urgent);
+      node.classList.toggle("overdue", isOverdue(c));
+      const soon = node.querySelector(".due-soon");
+      if (soon) soon.hidden = !(c.urgent && !isOverdue(c));
     }
   }
   setInterval(tick, 1000);
 
+  // One definition of who a dispute is waiting on, shared by Overview and Queue so their counts match.
+  //   waiting on you  = WAITING_FOR_SELLER_RESPONSE
+  //   with PayPal     = UNDER_REVIEW
+  //   with the buyer  = WAITING_FOR_BUYER_RESPONSE
+  const byDueDate = (a, b) => (Date.parse(a.seller_response_due_date) || Infinity) - (Date.parse(b.seller_response_due_date) || Infinity);
+  function groupDisputes(rows) {
+    const pick = (status) => rows.filter((r) => r.status === status).sort(byDueDate);
+    return { waiting: pick("WAITING_FOR_SELLER_RESPONSE"), withPayPal: pick("UNDER_REVIEW"), withBuyer: pick("WAITING_FOR_BUYER_RESPONSE") };
+  }
+
+  // A dispute's deadline cell: the live countdown, or "With PayPal" while it is under review by PayPal and
+  // there is nothing for the merchant to answer.
+  function deadlineNode(row, withDate = true) {
+    if (row.status === "UNDER_REVIEW" && !row.seller_response_due_date) {
+      return el("span", { class: "countdown with-paypal" }, el("span", { class: "cd-main", text: "With PayPal" }),
+        withDate ? el("span", { class: "sub", text: "Nothing to answer" }) : null);
+    }
+    return countdownNode(row.seller_response_due_date, withDate);
+  }
+
+  const isOverdue = (c) => c.text.startsWith("Overdue");
+  // Under 72 hours and not overdue: a filled tangerine "Due soon" chip beside the countdown.
+  const dueSoonChip = (c) => el("span", { class: "due-soon", hidden: !(c.urgent && !isOverdue(c)), text: "Due soon" });
+
   function countdownNode(dueIso, withDate = true) {
     const c = countdown(dueIso);
-    return el("span", { class: `countdown${c.urgent ? " urgent" : ""}`, "data-due": dueIso || "" },
-      el("span", { class: "cd-main", text: c.text }),
-      withDate && dueIso ? el("span", { class: "sub", text: `Due ${dueDate(dueIso)}` }) : null);
+    return el("span", { class: `countdown${c.urgent ? " urgent" : ""}${isOverdue(c) ? " overdue" : ""}`, "data-due": dueIso || "" },
+      el("span", { class: "cd-row" }, el("span", { class: "cd-main", text: c.text }), dueSoonChip(c)),
+      withDate && dueIso ? el("span", { class: "sub", title: mode.demo ? `Due ${dueDate(dueIso)}; countdown as recorded ${recordedLabel()}` : null,
+        text: mode.demo ? `Due ${dueDate(dueIso).split(",")[0]}, as of ${recordedLabel().split(",")[0]}` : `Due ${dueDate(dueIso)}` }) : null);
   }
 
   function sourceTag(source) {
     return source === "seeded"
       ? el("span", { class: "tag seeded", title: "Merchant-supplied sandbox test data, not from PayPal", text: "seeded" })
-      : el("span", { class: "tag", title: "From the PayPal sandbox API", text: "PayPal" });
+      : el("span", { class: "tag paypal", title: "From the PayPal sandbox API", text: "PayPal" });
   }
 
   function decisionChip(d) {
@@ -123,6 +352,6 @@ const DD = (() => {
       el("span", { text: String(score) }), bar);
   }
 
-  return { el, renderNav, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
+  return { el, color, rgba, colorNum, dueSoonChip, isOverdue, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, groupDisputes, deadlineNode, statusBadge, STATUS_HELP, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
            dueDate, sourceTag, decisionChip, riskNode, tick };
 })();

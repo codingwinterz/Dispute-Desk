@@ -12,6 +12,10 @@ worker thread, and sweeps stored disputes without a decision at startup.
 import asyncio
 import json
 import logging
+import os
+import shutil
+import sys
+import tempfile
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -30,19 +34,25 @@ from disputedesk.auth import TokenProvider
 from disputedesk.config import DISPUTE_DB, LOG_DIR, Settings, load_agent_settings, load_settings
 from disputedesk.decision import SANDBOX_NOTE
 from disputedesk.decision_store import DecisionStore
+from disputedesk.demo import DEMO_MESSAGE, SNAPSHOT_PATH, load_snapshot, read_snapshot
 from disputedesk.dispute_store import DisputeStore, safe_filename
 from disputedesk.drafts import DraftError, DraftStore, effective_draft
+from disputedesk.merchant_records import MerchantRecordStore, records_view
 from disputedesk.disputes import DisputesClient
 from disputedesk.events import DisputeDetected, EventBus
 from disputedesk.graph import GraphStore, connect, context_to_facts
 from disputedesk.http_log import make_client
 from disputedesk.policies import PolicySettings, PolicyStore, build_rules
 from disputedesk.poller import DisputePoller
+from disputedesk.submissions import BLOCKING, SubmissionStore, SubmitError, Submitter
 
 log = logging.getLogger("disputedesk.webhooks")
 
 WEBHOOK_PATH = "/webhooks/paypal"  # the only route reachable through the ngrok tunnel
 WEB_DIR = Path(__file__).resolve().parent / "web"  # dashboard HTML, CSS and JS (no build step)
+# Dashboard pages: path -> HTML file. Each page reads only the existing read-only API.
+PAGES = {"/": "queue.html", "/overview": "overview.html", "/activity": "activity.html",
+         "/insights": "insights.html", "/merchant-records": "merchant_records.html", "/policies": "policies.html"}
 
 # Header -> verify-webhook-signature body field.
 # https://developer.paypal.com/api/webhooks/v1/#verify-webhook-signature_post
@@ -85,6 +95,13 @@ class PayPalSignatureVerifier:
         except httpx.HTTPError as exc:
             raise VerificationUnavailable(type(exc).__name__) from exc
         return resp.json().get("verification_status") == "SUCCESS"
+
+
+class _DemoVerifier:
+    """Placeholder in demo mode: webhooks are refused before any verification would happen."""
+
+    def verify(self, headers: dict[str, str], event: dict[str, Any]) -> bool:
+        raise VerificationUnavailable("demo mode")
 
 
 class EventStore:
@@ -134,12 +151,46 @@ def create_app(
     decision_store: DecisionStore | None = None,
     policy_store: PolicyStore | None = None,
     draft_store: DraftStore | None = None,
+    submitter: Submitter | None = None,
+    demo: bool | None = None,
 ) -> FastAPI:
     """Build the app. With no verifier, settings come from the environment and the real
-    poller is started; tests inject their own pieces and get no poller unless they pass one."""
+    poller is started; tests inject their own pieces and get no poller unless they pass one.
+
+    Demo mode (demo=True or DEMO_MODE=1) serves data/demo_snapshot.json from a temporary SQLite file
+    through the same stores and routes. It never loads .env settings, so no PayPal client, token,
+    poller, analyzer, FalkorDB connection or LLM is ever created, and every write is refused."""
+    if demo is None:
+        demo = os.getenv("DEMO_MODE") == "1"
+    demo_info: dict[str, Any] = {"demo": False}
+    demo_dir: Path | None = None
+    demo_stores: list[Any] = []  # closed at shutdown before the temporary folder is removed
+    merchant_store: MerchantRecordStore | None = None
+    if demo:
+        snapshot = read_snapshot(Path(os.getenv("DEMO_SNAPSHOT") or SNAPSHOT_PATH))
+        demo_dir = Path(tempfile.mkdtemp(prefix="disputedesk-demo-"))
+        dispute_store = DisputeStore(demo_dir / "demo.db")
+        decision_store = DecisionStore(dispute_store.path)
+        policy_store = PolicyStore(dispute_store.path)
+        draft_store = DraftStore(dispute_store.path)
+        submissions = SubmissionStore(dispute_store.path)  # creates its tables before loading
+        merchant_store = MerchantRecordStore(dispute_store.path)
+        load_snapshot(snapshot, dispute_store.path)
+        demo_stores = [dispute_store, decision_store, policy_store, draft_store, submissions, merchant_store]
+        submitter = Submitter(dispute_store, decision_store, draft_store, submissions, client=None)
+        store = EventStore(demo_dir / "logs")
+        verifier = verifier or _DemoVerifier()  # never called: the middleware refuses every write
+        demo_info = {"demo": True, "recorded_at": snapshot.get("recorded_at"), "message": DEMO_MESSAGE}
+        log.info("demo mode: %d disputes from the snapshot; no PayPal, LLM or graph access", len(snapshot["disputes"]))
     settings: Settings | None = None
     if verifier is None:
-        settings = load_settings()
+        try:
+            settings = load_settings()
+        except RuntimeError as exc:
+            # A setup problem, not a crash: one clear line with the fix instead of a stack trace.
+            log.error("DisputeDesk can't start: %s", exc)
+            print(f"DisputeDesk can't start: {exc}", file=sys.stderr)
+            raise SystemExit(1) from None
         secrets = (settings.client_id, settings.client_secret)
         http = make_client(LOG_DIR / "webhook_http.jsonl", secrets)
         verifier = PayPalSignatureVerifier(settings, TokenProvider(settings, http), http)
@@ -147,6 +198,8 @@ def create_app(
     dispute_store = dispute_store or DisputeStore(DISPUTE_DB)
     # Decisions live in the same SQLite file as the disputes.
     decision_store = decision_store or DecisionStore(dispute_store.path)
+    # Read-only here (scripts import the records). Demo mode already opened one on its temporary file.
+    merchant_store = merchant_store or MerchantRecordStore(dispute_store.path)
     policy_store = policy_store or PolicyStore(dispute_store.path)
     draft_store = draft_store or DraftStore(dispute_store.path)
     bus = bus or EventBus()
@@ -160,6 +213,14 @@ def create_app(
                             rules_provider=policy_store.rules)
     if analyzer is not None:
         bus.subscribe(analyzer.on_event)
+    if submitter is None:
+        submit_client = None
+        if settings is not None:
+            # Its own client so every approved write and its response is logged (redacted) apart.
+            submit_http = make_client(LOG_DIR / "submit_http.jsonl", secrets)
+            submit_client = DisputesClient(settings, TokenProvider(settings, submit_http), submit_http)
+        submitter = Submitter(dispute_store, decision_store, draft_store, SubmissionStore(dispute_store.path),
+                              submit_client, bus)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -176,6 +237,10 @@ def create_app(
                 await task
             if analyzer:
                 await run_in_threadpool(analyzer.stop)
+            if demo_dir is not None:
+                for s_ in demo_stores:
+                    s_.close()
+                shutil.rmtree(demo_dir, ignore_errors=True)
 
     app = FastAPI(title="DisputeDesk", lifespan=lifespan)
     app.state.bus = bus
@@ -190,19 +255,29 @@ def create_app(
         # UNVERIFIED for non-default ngrok configs; put real auth here before any wider exposure.
         if request.url.path != WEBHOOK_PATH and "x-forwarded-for" in request.headers:
             return JSONResponse({"error": "local access only"}, status_code=403)
-        return await call_next(request)
+        # Demo mode is read-only: every write (submissions, drafts, policies, webhook) is refused.
+        # The policy preview only computes rule text and writes nothing.
+        if demo and request.method not in ("GET", "HEAD") and request.url.path != "/api/policies/preview":
+            return JSONResponse({"error": "demo_mode", "message": DEMO_MESSAGE}, status_code=403)
+        response = await call_next(request)
+        # Dashboard pages and assets: always revalidate, so a browser never runs a stale page against
+        # a newer server (FileResponse/StaticFiles send Last-Modified but no Cache-Control).
+        path = request.url.path
+        if path in PAGES or path.startswith(("/case/", "/static/")):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     # --- dashboard -------------------------------------------------------------
 
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
-    @app.get("/", include_in_schema=False)
-    async def queue_page() -> FileResponse:
-        return FileResponse(WEB_DIR / "queue.html")
+    def _page(filename: str) -> Any:
+        async def page() -> FileResponse:
+            return FileResponse(WEB_DIR / filename)
+        return page
 
-    @app.get("/policies", include_in_schema=False)
-    async def policies_page() -> FileResponse:
-        return FileResponse(WEB_DIR / "policies.html")
+    for page_path, page_file in PAGES.items():
+        app.add_api_route(page_path, _page(page_file), methods=["GET"], include_in_schema=False)
 
     @app.get("/case/{dispute_id}", include_in_schema=False)
     async def case_page(dispute_id: str) -> FileResponse:
@@ -210,6 +285,11 @@ def create_app(
         return FileResponse(WEB_DIR / "case.html")
 
     # --- read-only API (local store only; no PayPal calls) -----------------------
+
+    @app.get("/api/mode")
+    async def app_mode() -> JSONResponse:
+        """Whether this server is in demo mode (serving recorded sandbox data)."""
+        return JSONResponse(demo_info)
 
     def _queue_rows() -> list[dict[str, Any]]:
         briefs = decision_store.briefs()
@@ -219,6 +299,13 @@ def create_app(
     async def stored_disputes() -> JSONResponse:
         return JSONResponse({"disputes": await run_in_threadpool(_queue_rows)})
 
+    @app.get("/api/merchant-records")
+    async def merchant_records() -> JSONResponse:
+        """Shipments, devices and earlier disputes from the merchant's records (seeded in the sandbox)."""
+        rows = await run_in_threadpool(merchant_store.rows)
+        disputes = await run_in_threadpool(dispute_store.full_disputes)
+        return JSONResponse(records_view(rows, disputes))
+
     @app.get("/api/decisions/{dispute_id}")
     async def dispute_decision(dispute_id: str) -> JSONResponse:
         dispute = await run_in_threadpool(dispute_store.summary, dispute_id)
@@ -226,8 +313,43 @@ def create_app(
             return JSONResponse({"error": "unknown dispute"}, status_code=404)
         decision = await run_in_threadpool(decision_store.get, dispute_id)
         saved = await run_in_threadpool(draft_store.get, dispute_id)
+        check = await run_in_threadpool(submitter.check, dispute_id)
         return JSONResponse({"dispute": dispute, "decision": _with_fact_refs(decision),
-                             "draft": effective_draft(saved, decision)})
+                             "draft": effective_draft(saved, decision), "submit": check})
+
+    # --- approved responses to PayPal (the only PayPal writes) ------------------------
+
+    @app.get("/api/submissions/{dispute_id}/dry-run")
+    async def submission_dry_run(dispute_id: str) -> JSONResponse:
+        """The exact request an approval would send, built from stored state. Never sent."""
+        if await run_in_threadpool(dispute_store.summary, dispute_id) is None:
+            return JSONResponse({"error": "unknown dispute"}, status_code=404)
+        return JSONResponse(await run_in_threadpool(submitter.dry_run, dispute_id))
+
+    @app.post("/api/submissions/{dispute_id}")
+    async def submit_response(dispute_id: str, request: Request) -> JSONResponse:
+        refused = _refuse_write(request)
+        if refused:
+            return refused
+        if await run_in_threadpool(dispute_store.summary, dispute_id) is None:
+            return JSONResponse({"error": "unknown dispute"}, status_code=404)
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict) or body.get("confirm") is not True:
+            # Nothing is sent without an explicit confirmation from the dialog.
+            return JSONResponse({"error": "confirmation required",
+                                 "message": 'Confirm in the dialog first (send {"confirm": true, "action", "text"}).'},
+                                status_code=400)
+        action, text = body.get("action"), body.get("text")
+        if not isinstance(action, str) or not isinstance(text, str):
+            return JSONResponse({"error": "invalid body", "message": "action and text are required."}, status_code=422)
+        try:
+            result = await run_in_threadpool(submitter.submit, dispute_id, action, text)
+        except SubmitError as exc:
+            return JSONResponse({"error": exc.code, "message": exc.message} | (exc.extra or {}), status_code=exc.http)
+        return JSONResponse(result)
 
     # --- merchant edits (local store only; never PayPal) ---------------------------
 
@@ -260,6 +382,11 @@ def create_app(
             return refused
         if await run_in_threadpool(dispute_store.summary, dispute_id) is None:
             return JSONResponse({"error": "unknown dispute"}, status_code=404)
+        sub = await run_in_threadpool(submitter.store.get, dispute_id)
+        if sub and sub["state"] in BLOCKING:
+            return JSONResponse({"error": "already_submitted",
+                                 "message": "This dispute's response has been sent (or its outcome is unknown); the draft can't change now."},
+                                status_code=409)
         try:
             body = await request.json()
             text = body["text"] if isinstance(body, dict) and isinstance(body.get("text"), str) else None

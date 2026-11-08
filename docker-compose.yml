@@ -1,0 +1,20 @@
+# FalkorDB for DisputeDesk's merchant-context graph (full mode only; demo mode needs nothing).
+#   docker compose up -d falkordb
+# The port is bound to 127.0.0.1 so the graph is reachable from this machine only.
+services:
+  falkordb:
+    image: falkordb/falkordb:6.0.3
+    container_name: disputedesk-falkordb
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - falkordb-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  falkordb-data:

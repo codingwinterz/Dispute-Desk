@@ -69,7 +69,7 @@
           el("span", { class: "rule-id", text: r.id })),
         el("p", { class: "policy-body" }, ...r.body(s)),
         el("div", { class: "agent-reads" },
-          el("span", { class: "hint", text: "The agent reads" }),
+          el("span", { class: "cap", text: "The agent reads" }),
           el("blockquote", { id: `rule-${r.id}` })));
     });
     const status = el("p", { class: "hint", id: "save-status", "aria-live": "polite" });
@@ -154,9 +154,18 @@
       if (resp.status === 403) throw new Error("This page only works on the machine running DisputeDesk (open it at http://127.0.0.1:8000).");
       if (!resp.ok) throw new Error(`The server answered HTTP ${resp.status}. Reload to try again.`);
       const body = await resp.json();
+      DD.live(true);
+      await DD.modeReady;
       saved = body.settings;
       render(body);
+      if (DD.mode.demo) {
+        const button = document.getElementById("save");
+        button.disabled = true;
+        button.textContent = DD.DEMO_LABEL;
+        setStatus("Recorded sandbox data: you can try the switches and see the rule text change, but nothing is saved.");
+      }
     } catch (err) {
+      DD.live(false);
       document.getElementById("loading").textContent = err instanceof TypeError
         ? "Can't reach the DisputeDesk server. Is uvicorn still running? Reload to try again." : err.message;
     }

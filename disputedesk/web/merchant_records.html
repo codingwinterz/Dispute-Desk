@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DisputeDesk merchant records</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=Public+Sans:wght@400;600;700&display=optional">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="narrow">
+    <h1>Merchant records</h1>
+    <p class="lede">The shipments and checkout devices behind each disputed transaction, and earlier disputes on file.
+      The agent reads these alongside PayPal's own records.</p>
+    <p class="notice" id="note">In production your store supplies this; in the sandbox it is simulated.</p>
+    <p class="banner" id="error" role="alert" hidden></p>
+    <div id="records" aria-live="polite">
+      <div class="state"><p>Loading merchant records from the local store.</p></div>
+    </div>
+  </main>
+
+  <script src="/static/common.js"></script>
+  <script src="/static/pointer.js"></script>
+  <script src="/static/merchant_records.js"></script>
+</body>
+</html>

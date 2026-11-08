@@ -23,7 +23,7 @@ class DisputeDetected:
 @dataclass(frozen=True)
 class DisputeUpdated:
     dispute_id: str
-    source: str  # "poll"
+    source: str  # "poll" or "submit"
     name: str = "dispute_updated"
 
 

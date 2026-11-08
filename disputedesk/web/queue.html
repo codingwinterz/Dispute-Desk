@@ -6,15 +6,16 @@
   <title>DisputeDesk queue</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=Public+Sans:wght@400;600;700&display=optional">
   <!-- AG Grid Community 32.3.3 (MIT license), free features only. -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-grid.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-theme-quartz.css">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
   <main>
-    <h1>Disputes waiting on you</h1>
+    <h1 id="queue-title">Disputes waiting on you</h1>
     <p class="lede" id="summary">Loading disputes from the local store.</p>
     <p class="banner" id="error" role="alert" hidden></p>
 
@@ -36,6 +37,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/dist/ag-grid-community.min.js"></script>
   <script src="/static/common.js"></script>
+  <script src="/static/pointer.js"></script>
   <script src="/static/queue.js"></script>
 </body>
 </html>
