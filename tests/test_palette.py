@@ -156,3 +156,52 @@ def test_approve_action_is_the_one_tangerine_button():
     case = (WEB / "static" / "case.js").read_text(encoding="utf-8")
     assert case.count('class: "primary approve"') == 2  # the Approve button and its confirm button
     assert "button.primary.approve { background: var(--splash); color: var(--on-splash); }" in CSS
+
+
+# --- phase 2: depth lighting ------------------------------------------------------------------
+
+def _pct(name):
+    return float(re.search(rf"--{name}:\s*([0-9.]+)%", ROOT_BLOCK).group(1)) / 100
+
+
+def _lit_backgrounds():
+    """The brightest point of every lit area, with the grain on top for the page ground. The two hero
+    pools don't overlap (by geometry), so each is stacked on the ground lift separately."""
+    grain = float(re.search(r"opacity='([0-9.]+)'", re.search(r"--grain:\s*(url\([^;]+\));", CSS).group(1)).group(1))
+    blue, lift = TOKENS["primary"], _pct("lift-ground")
+    lifted = over(TOKENS["ground"], blue, lift)
+    out = {"ground lift": lifted,
+           "ground lift + hero glow": over(lifted, blue, _pct("glow-hero")),
+           "ground lift + soft hero glow": over(lifted, blue, _pct("glow-hero-soft"))}
+    for k in list(out):
+        out[k + " + light grain"] = over(out[k], "#ffffff", grain)
+        out[k + " + dark grain"] = over(out[k], "#000000", grain)
+    out["verdict panel glow"] = over(TOKENS["surface"], blue, _pct("glow-verdict"))
+    return out
+
+
+def test_text_and_marks_still_pass_on_top_of_the_glows():
+    for where, bg in _lit_backgrounds().items():
+        for text in ("text", "muted", "placeholder", "primary-text", "splash", "danger", "focus", "seeded"):
+            assert ratio(TOKENS[text], bg) >= 4.5, (text, where, round(ratio(TOKENS[text], bg), 2))
+        for mark in ("primary", "control-edge", "focus", "seeded", "splash", "danger"):
+            assert ratio(TOKENS[mark], bg) >= 3.5, (mark, where, round(ratio(TOKENS[mark], bg), 2))
+
+
+def test_lighting_uses_blue_and_neutral_tokens_only_and_never_moves():
+    phase = CSS.split("palette pass, phase 2: depth lighting")[1]
+    lighting = [phase, re.search(r"(?m)^body \{[^}]+\}", CSS).group(0),
+                re.search(r"\.verdict-band > \.panel:first-child \{[^}]+\}", CSS).group(0)]
+    lighting += re.findall(r"--(?:shadow-\d|lift-ground|glow-[a-z-]+):[^;]+;", ROOT_BLOCK)
+    for chunk in lighting:
+        assert "--splash" not in chunk and "--danger" not in chunk, chunk[:80]
+        assert "animation" not in chunk and "transition" not in chunk.replace("transition: none", ""), chunk[:80]
+        assert not COLOUR_LITERAL.search(chunk), chunk[:80]
+    for token in ("var(--glow-hero)", "var(--glow-hero-soft)"):
+        assert token in phase
+    assert "var(--lift-ground)" in lighting[1] and "var(--glow-verdict)" in lighting[2]
+
+
+def test_lighting_leaves_grid_rows_and_the_approve_dialog_alone():
+    phase = CSS.split("palette pass, phase 2: depth lighting")[1]
+    assert ".ag-row" not in phase and "dialog" not in phase and ".confirm" not in phase

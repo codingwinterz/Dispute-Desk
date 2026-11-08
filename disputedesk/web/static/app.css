@@ -27,6 +27,18 @@
   /* light and shade, mixed into shadows and sheens */
   --shade: #000000;
   --sheen: #ffffff;
+  /* depth lighting: blue only, static. Peak strengths are contrast-tested with the grain composited. */
+  --lift-ground: 4%;        /* top of the page ground, fading down to --ground-deep */
+  --glow-hero: 9%;          /* behind the Overview case map */
+  --glow-hero-soft: 5%;     /* behind the Overview hero type */
+  --glow-verdict: 9%;       /* inside the case page's verdict panel */
+  /* layered shadows: a contact shadow plus a long soft one, neutral shade only */
+  --shadow-1: 0 1px 0 color-mix(in srgb, var(--sheen) 3%, transparent) inset, 0 1px 2px color-mix(in srgb, var(--shade) 45%, transparent),
+              0 10px 22px -14px color-mix(in srgb, var(--shade) 75%, transparent);
+  --shadow-2: 0 1px 0 color-mix(in srgb, var(--sheen) 4%, transparent) inset, 0 2px 4px color-mix(in srgb, var(--shade) 40%, transparent),
+              0 18px 36px -20px color-mix(in srgb, var(--shade) 85%, transparent), 0 40px 70px -40px color-mix(in srgb, var(--shade) 70%, transparent);
+  --shadow-3: 0 1px 0 color-mix(in srgb, var(--sheen) 5%, transparent) inset, 0 3px 6px color-mix(in srgb, var(--shade) 40%, transparent),
+              0 26px 50px -24px color-mix(in srgb, var(--shade) 90%, transparent), 0 60px 100px -50px color-mix(in srgb, var(--shade) 75%, transparent);
 
   --r-sm: 4px;
   --r-md: 8px;
@@ -45,8 +57,9 @@
 html, body { margin: 0; }
 
 body {
-  background: var(--ground) var(--grain) repeat;
-  background-size: 180px 180px;
+  background: var(--grain) repeat, linear-gradient(180deg, color-mix(in srgb, var(--primary) var(--lift-ground), var(--ground)) 0,
+    var(--ground) 560px, var(--ground-deep) 100%) fixed, var(--ground);
+  background-size: 180px 180px, 100% 100%;
   color: var(--text);
   font-family: var(--font);
   font-size: 15px;
@@ -622,7 +635,10 @@ button:disabled { cursor: not-allowed; }
 /* case page: tier 1 band (decision + timeline), tiers 2-3 in the columns below */
 .verdict-band { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); gap: 20px; margin-top: 24px; }
 .verdict-band > .panel { margin: 0; }
-.verdict-band > .panel:first-child { background: var(--surface-2); box-shadow: 0 1px 0 color-mix(in srgb, var(--sheen) 4%, transparent) inset, 0 24px 48px -26px color-mix(in srgb, var(--shade) 85%, transparent); }
+.verdict-band > .panel:first-child {
+  background: radial-gradient(130% 110% at 0% 0%, color-mix(in srgb, var(--primary) var(--glow-verdict), var(--surface)) 0%, var(--surface) 70%), var(--surface);
+  box-shadow: var(--shadow-3);
+}
 .verdict-band .verdict .chip { font-size: 18px; padding: 10px 16px; }
 .verdict-band .verdict .chip.accept { padding: 8.5px 14.5px; }
 .verdict-band .verdict .score strong { font-size: 30px; }
@@ -932,7 +948,7 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
   align-self: center; margin: 0 auto 0 28px; pointer-events: none;
   display: grid; justify-items: center; gap: 2px; padding: 8px 18px 9px;
   color: var(--splash); border: 3px solid currentColor; border-radius: 8px;
-  box-shadow: inset 0 0 0 2px var(--surface-2), inset 0 0 0 4px currentColor;   /* the stamp's double rule */
+  box-shadow: inset 0 0 0 2px var(--surface), inset 0 0 0 4px currentColor;   /* the stamp's double rule */
   transform: rotate(-7deg); opacity: 0.92;
 }
 .stamp-word { font-family: var(--font-display); font-weight: 900; font-size: clamp(30px, 3.4vw, 46px); line-height: 0.95; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -960,3 +976,22 @@ button.primary.approve:disabled { background: var(--border); color: var(--muted)
   color: var(--on-splash); background: var(--splash);
 }
 .due-soon[hidden] { display: none; }
+
+/* ---- palette pass, phase 2: depth lighting (static, blue and neutral only) ---------------------- */
+/* Soft blue light behind the Overview hero: a stronger pool behind the case map, a faint one behind
+   the type. The two pools don't overlap, and each is contrast-tested on top of the ground lift. */
+.hero-split { position: relative; isolation: isolate; }
+.hero-split::before {
+  content: ""; position: absolute; inset: -48px -24px -24px; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(ellipse 34% 62% at 76% 50%, color-mix(in srgb, var(--primary) var(--glow-hero), transparent) 0%, transparent 70%),
+    radial-gradient(ellipse 28% 50% at 18% 46%, color-mix(in srgb, var(--primary) var(--glow-hero-soft), transparent) 0%, transparent 70%);
+}
+/* Layered shadows: each raised surface gets a contact shadow plus a long soft one. */
+.sidebar { box-shadow: 10px 0 40px -18px color-mix(in srgb, var(--shade) 70%, transparent); }
+.panel, .chart, .rec-folder, .policy { box-shadow: var(--shadow-2); }
+.case-card { box-shadow: var(--shadow-2); }
+.case-card:hover, .case-card:focus-visible { box-shadow: var(--shadow-3), 0 0 0 1px color-mix(in srgb, var(--primary) 25%, transparent); }
+#grid.ag-theme-quartz-dark { box-shadow: var(--shadow-2); }   /* the grid's frame only; rows are untouched */
+.rec-block, .rec-past-list li, .draft, .agent-reads blockquote { box-shadow: var(--shadow-1); }
+.side-links a[aria-current="page"] { box-shadow: var(--shadow-1); }
