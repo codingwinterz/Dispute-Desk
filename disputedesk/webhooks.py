@@ -25,7 +25,7 @@ from typing import Any, Protocol
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
@@ -52,8 +52,11 @@ log = logging.getLogger("disputedesk.webhooks")
 WEBHOOK_PATH = "/webhooks/paypal"  # the only route reachable through the ngrok tunnel
 WEB_DIR = Path(__file__).resolve().parent / "web"  # dashboard HTML, CSS and JS (no build step)
 # Dashboard pages: path -> HTML file. Each page reads only the existing read-only API.
-PAGES = {"/": "queue.html", "/overview": "overview.html", "/activity": "activity.html",
+# The Overview is the start page; the Queue lives at /queue.
+PAGES = {"/": "overview.html", "/queue": "queue.html", "/activity": "activity.html",
          "/insights": "insights.html", "/merchant-records": "merchant_records.html", "/policies": "policies.html"}
+# Old page paths kept working. 307 (temporary), so a browser never caches the redirect for good.
+REDIRECTS = {"/overview": "/"}
 
 # Header -> verify-webhook-signature body field.
 # https://developer.paypal.com/api/webhooks/v1/#verify-webhook-signature_post
@@ -268,7 +271,7 @@ def create_app(
         # Dashboard pages and assets: always revalidate, so a browser never runs a stale page against
         # a newer server (FileResponse/StaticFiles send Last-Modified but no Cache-Control).
         path = request.url.path
-        if path in PAGES or path.startswith(("/case/", "/static/")):
+        if path in PAGES or path in REDIRECTS or path.startswith(("/case/", "/static/")):
             response.headers["Cache-Control"] = "no-cache"
         return response
 
@@ -283,6 +286,14 @@ def create_app(
 
     for page_path, page_file in PAGES.items():
         app.add_api_route(page_path, _page(page_file), methods=["GET"], include_in_schema=False)
+
+    def _redirect(target: str) -> Any:
+        async def redirect() -> RedirectResponse:
+            return RedirectResponse(target, status_code=307)
+        return redirect
+
+    for old_path, target in REDIRECTS.items():
+        app.add_api_route(old_path, _redirect(target), methods=["GET"], include_in_schema=False)
 
     @app.get("/case/{dispute_id}", include_in_schema=False)
     async def case_page(dispute_id: str) -> FileResponse:

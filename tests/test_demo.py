@@ -1,6 +1,7 @@
 """Demo mode: served from the snapshot with no PayPal, Gemini or FalkorDB access, and read-only."""
 
 import json
+import re
 import sqlite3
 from pathlib import Path
 
@@ -124,9 +125,13 @@ def test_committed_snapshot_passes_the_scan():
 
 def test_demo_serves_every_page_and_api_without_outside_access(demo_client):
     client, router = demo_client
-    for path in ("/", "/overview", "/activity", "/insights", "/policies", f"/case/{DID}", "/static/common.js",
+    for path in ("/", "/queue", "/activity", "/insights", "/policies", f"/case/{DID}", "/static/common.js",
                  "/api/disputes", f"/api/decisions/{DID}", "/api/policies", f"/api/submissions/{DID}/dry-run"):
         assert client.get(path).status_code == 200, path
+    titles = {p: re.search(r"<title>(.*?)</title>", client.get(p).text).group(1) for p in ("/", "/queue")}
+    assert titles == {"/": "DisputeDesk overview", "/queue": "DisputeDesk queue"}
+    old = client.get("/overview", follow_redirects=False)
+    assert old.status_code == 307 and old.headers["location"] == "/"
     mode = client.get("/api/mode").json()
     assert mode["demo"] is True and mode["recorded_at"] and mode["message"] == DEMO_MESSAGE
     rows = client.get("/api/disputes").json()["disputes"]

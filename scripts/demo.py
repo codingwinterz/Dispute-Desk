@@ -3,7 +3,7 @@
     python scripts/demo.py [--port 8000]
 
 Serves data/demo_snapshot.json. Needs no .env. Approve and every other write are disabled.
-Open http://127.0.0.1:8000/ afterwards.
+Open http://127.0.0.1:8000/ afterwards (the Overview; the queue is at /queue).
 """
 
 import argparse
@@ -32,7 +32,7 @@ def main() -> int:
         return 1
 
     os.environ["DEMO_MODE"] = "1"
-    print(f"DisputeDesk demo: http://127.0.0.1:{args.port}/  (recorded sandbox data; nothing is sent to PayPal)")
+    print(f"DisputeDesk demo: http://127.0.0.1:{args.port}/  (Overview; the queue is at /queue. Recorded sandbox data; nothing is sent to PayPal)")
     uvicorn.run("disputedesk.webhooks:create_app", factory=True, host="127.0.0.1", port=args.port, log_level="warning")
     return 0
 

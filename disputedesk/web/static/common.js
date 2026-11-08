@@ -22,7 +22,7 @@ const DD = (() => {
   const PAGES = { overview: "Overview", queue: "Dispute queue", activity: "Activity", insights: "Insights", records: "Merchant records", policies: "Dispute policies", case: "Case" };
 
   function renderNav(current, title) {
-    const links = [["overview", "/overview", "Overview"], ["queue", "/", "Queue"], ["activity", "/activity", "Activity"],
+    const links = [["overview", "/", "Overview"], ["queue", "/queue", "Queue"], ["activity", "/activity", "Activity"],
                    ["insights", "/insights", "Insights"], ["records", "/merchant-records", "Merchant records"],
                    ["policies", "/policies", "Policies"]];
     const sidebar = el("aside", { class: "sidebar" },
