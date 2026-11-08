@@ -26,10 +26,25 @@ def over(base, top, alpha):
     return "#" + "".join(f"{c:02x}" for c in mix)
 
 
+def row_rules_are_only_recommendation_edges(css):
+    """Every AG Grid row rule in `css` must be a recommendation edge drawn with an inset box-shadow only:
+    no transform, size, spacing or border (columns, widths and rendering stay AG Grid's)."""
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        if ".ag-row" not in sel:
+            continue
+        sel = sel.strip()
+        assert re.fullmatch(r"#grid \.ag-row\.rec-[a-z]+", sel), sel
+        props = [d.split(":", 1)[0].strip() for d in body.split(";") if d.strip()]
+        assert props == ["box-shadow"] and "inset" in body, (sel, body)
+    return True
+
+
 def test_every_page_loads_fonts_without_layout_shift():
     for page in WEB.glob("*.html"):
         html = page.read_text(encoding="utf-8")
-        assert "family=Big+Shoulders+Display:wght@800;900" in html, page.name
+        weights = re.search(r"family=Big\+Shoulders\+Display:wght@([0-9;]+)", html).group(1).split(";")
+        assert {"800", "900"} <= set(weights), page.name  # heavy weights stay; lighter ones may join
         assert "display=optional" in html and "display=swap" not in html, page.name
 
 
@@ -142,7 +157,8 @@ def test_activity_and_records_reveal_and_restyle():
 def test_queue_grid_columns_untouched_and_rows_not_transformed():
     queue = (WEB / "static" / "queue.js").read_text(encoding="utf-8")
     assert queue.count("headerName:") == 8
-    assert ".ag-row" not in CSS.split("editorial pass, phase 1")[1].replace(".ag-row-hover", "")  # no new row rules
+    later = CSS.split("editorial pass, phase 1")[1]
+    assert row_rules_are_only_recommendation_edges(later)  # only the allowed left-edge row class
 
 
 # --- phase 4: accessibility fixes -------------------------------------------------------------

@@ -33,6 +33,7 @@
   --glow-hero-soft: 7%;     /* behind the Overview hero type */
   --glow-verdict: 9%;       /* inside the case page's verdict panel */
   --glow-spotlight: 11%;    /* the cursor spotlight on the page background */
+  --glow-page-hero: 10%;    /* behind each page hero */
   --glare: 10%;             /* the glare on a tilted Overview card (painted under its text) */
   --spot-size: 760px;
   /* layered shadows: a contact shadow plus a long soft one, neutral shade only */
@@ -468,7 +469,7 @@ button.secondary.small { font-size: 13px; padding: 6px 10px; }
   border-radius: var(--r-md);
   box-shadow: 0 1px 0 color-mix(in srgb, var(--sheen) 3%, transparent) inset, 0 18px 40px -18px color-mix(in srgb, var(--shade) 75%, transparent), 0 4px 12px -6px color-mix(in srgb, var(--shade) 50%, transparent);
 }
-.ag-theme-quartz-dark .ag-row-hover { box-shadow: inset 3px 0 0 var(--primary); }
+/* (row hover keeps AG Grid's own hover colour; the left edge belongs to the recommendation) */
 .chip.defend { box-shadow: 0 0 0 1px var(--primary), 0 0 14px -2px color-mix(in srgb, var(--primary) 55%, transparent); }  /* the ring keeps its edge >= 3.5:1 */
 .chip.accept { box-shadow: 0 0 12px -4px color-mix(in srgb, var(--primary) 45%, transparent); }
 .panel { box-shadow: 0 16px 36px -22px color-mix(in srgb, var(--shade) 80%, transparent); }
@@ -1045,4 +1046,66 @@ button.primary.approve:disabled { background: var(--border); color: var(--muted)
 @media (prefers-reduced-motion: reduce) {
   .hero-board .cap, .hero-split::before { transform: none !important; }
   .map-node, .map-hover { transform: none; }
+}
+
+/* ---- final design pass, phase 1: page hero, type weights, cards, buttons, reveals, queue ---------- */
+/* Editorial page hero, shared by every page. */
+.page-hero { position: relative; padding: 14px 0 30px; margin-bottom: 4px; }
+.page-hero::before {
+  content: ""; position: absolute; inset: -36px -10% -12px -36px; z-index: -1; pointer-events: none; mix-blend-mode: lighten;
+  background: radial-gradient(ellipse 42% 75% at 16% 42%, color-mix(in srgb, var(--primary) var(--glow-page-hero), var(--ground)) 0%, transparent 70%);
+}
+.page-hero h1 { margin-bottom: 12px; }
+.page-hero .lede { max-width: 66ch; }
+.eyebrow {
+  display: flex; align-items: center; gap: 10px; margin: 0 0 12px;
+  font-size: 13px; font-weight: 700; font-variant-caps: all-small-caps; letter-spacing: 0.16em; color: var(--muted);
+}
+.eyebrow::before { content: ""; width: 24px; height: 2px; background: var(--primary); }
+.eyebrow .sep { color: var(--primary-text); padding: 0 0.45em; }
+.stat-chips { list-style: none; display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0 0; padding: 0; }
+.stat-chip {
+  display: grid; gap: 3px; min-width: 150px; padding: 13px 18px 14px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--border); border-top-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  box-shadow: var(--shadow-1);
+}
+.stat-value { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display); font-weight: 800; font-size: 34px; line-height: 1; color: var(--text); }
+.stat-dot { gap: 0; }
+.stat-label { font-size: 13px; font-variant-caps: all-small-caps; letter-spacing: 0.08em; color: var(--muted); }
+.stat-note { font-size: 13px; color: var(--muted); }
+.stat-chip.overdue .stat-value { color: var(--danger); }
+
+/* Type: the heavy display weight is for page titles and hero numbers; secondary headings use 600, tracked. */
+.stack-head h2, .day h2, .rec-head h3, .policy-title, .bar-label, .chart .stack-head h2 { font-weight: 600; letter-spacing: 0.04em; }
+
+/* Cards share the Overview's depth and a thin blue top edge. */
+.panel, .chart, .rec-folder, .policy, .case-card { border-top-color: color-mix(in srgb, var(--primary) 55%, var(--border)); }
+
+/* Quiet outlined secondary buttons with tracked capitals (in the page only: the Approve dialog keeps its look). */
+main button.secondary {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 9px 14px;
+  border-color: var(--control-edge); color: var(--text);
+}
+main button.secondary:hover { border-color: var(--primary); color: var(--primary-text); }
+main button.secondary.small { font-size: 11px; padding: 6px 10px; }
+
+/* Staggered reveal: each element waits a little longer than the one before. */
+.is-revealed { transition-delay: calc(var(--reveal-i, 0) * 70ms); }
+
+/* Queue: segmented status filter. */
+.segmented { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; border: 1px solid var(--control-edge); background: var(--surface); }
+.segmented button {
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); background: transparent; border: 0; border-radius: 999px;
+  padding: 6px 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+}
+.segmented button:hover { color: var(--text); }
+.segmented button[aria-pressed="true"] { background: var(--primary-fill); color: var(--on-primary); }
+.seg-count { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--primary-text); }
+.segmented button[aria-pressed="true"] .seg-count { color: var(--on-primary); }
+/* Queue rows: a left edge by recommendation (inset shadow only: no transform, width or border change). */
+#grid .ag-row.rec-defend { box-shadow: inset 4px 0 0 var(--primary); }
+#grid .ag-row.rec-accept { box-shadow: inset 2px 0 0 var(--primary-text); }
+@media (max-width: 900px) {
+  .stat-chip { min-width: 0; flex: 1 1 140px; }
+  .segmented { flex-wrap: wrap; border-radius: var(--r-md); }
 }

@@ -204,6 +204,37 @@ const DD = (() => {
     }
   }
 
+  // The same reveal, staggered: each node waits a little longer than the one before (CSS reads --reveal-i).
+  function revealStaggered(nodes) {
+    nodes.filter(Boolean).forEach((n, i) => n.style.setProperty("--reveal-i", String(i)));
+    reveal(nodes);
+  }
+
+  // ---- editorial page hero ---------------------------------------------------------------------
+  // Shared by every page: a small-caps eyebrow, the display headline, one sentence from real data and
+  // stat chips. Pages own their headline and sentence; these helpers build the eyebrow and the chips.
+  function eyebrow(section) {
+    const source = mode.demo ? `recorded sandbox data, ${recordedLabel().split(",")[0]}` : "live from the PayPal sandbox";
+    return [el("span", {}, section, el("span", { class: "sep", text: "." }), source)];  // one item beside the rule
+  }
+  /** One stat chip. value: string or node; note: optional string or node; tone: "" | "waiting" | "overdue". */
+  function statChip({ label, value, note = null, tone = "" }) {
+    return el("li", { class: `stat-chip${tone ? ` ${tone}` : ""}` },
+      el("span", { class: "stat-value num" }, tone === "waiting" ? el("span", { class: "badge waiting stat-dot", "aria-hidden": "true" }) : null, value),
+      el("span", { class: "stat-label", text: label }),
+      note ? el("span", { class: "stat-note" }, note) : null);
+  }
+  // Amounts summed per currency, never converted. "" when nothing is stored.
+  function sumAmounts(rows) {
+    const byCur = {};
+    for (const r of rows) {
+      if (!r.amount || r.amount.value === undefined) continue;
+      const cur = r.amount.currency_code || "USD";
+      byCur[cur] = (byCur[cur] || 0) + Number(r.amount.value);
+    }
+    return Object.entries(byCur).map(([cur, v]) => money({ value: v.toFixed(2), currency_code: cur })).join(" + ");
+  }
+
   // PayPal enums -> plain words. Unknown values fall back to a readable form, never dropped.
   // Enum values as returned by the Customer Disputes API (labels are display-only):
   // https://developer.paypal.com/docs/api/customer-disputes/v1/
@@ -352,6 +383,6 @@ const DD = (() => {
       el("span", { text: String(score) }), bar);
   }
 
-  return { el, color, rgba, colorNum, dueSoonChip, isOverdue, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, groupDisputes, deadlineNode, statusBadge, STATUS_HELP, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
+  return { el, color, rgba, colorNum, dueSoonChip, isOverdue, revealStaggered, eyebrow, statChip, sumAmounts, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, groupDisputes, deadlineNode, statusBadge, STATUS_HELP, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
            dueDate, sourceTag, decisionChip, riskNode, tick };
 })();

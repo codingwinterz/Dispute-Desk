@@ -116,6 +116,13 @@
       (!filters.reason || node.data.reason === filters.reason) &&
       (!filters.status || node.data.status === filters.status),
     onModelUpdated: () => { updateCount(); keepReason(); },
+    // A coloured left edge by recommendation: a row class only (CSS draws an inset shadow). Columns,
+    // widths and cell rendering are untouched, and rows are never transformed.
+    rowClassRules: {
+      "rec-defend": (p) => Boolean(p.data) && p.data.recommended === "DEFEND",
+      "rec-accept": (p) => Boolean(p.data) && p.data.recommended === "ACCEPT",
+      "rec-pending": (p) => Boolean(p.data) && p.data.recommended !== "DEFEND" && p.data.recommended !== "ACCEPT",
+    },
     onCellMouseOver: (e) => {
       clearTimeout(hoverTimer);
       const rowEl = e.event && e.event.target && e.event.target.closest(".ag-row");
@@ -172,6 +179,33 @@
     summary.replaceChildren(...parts);
   }
 
+  // Hero eyebrow and stat chips, from the same definition as the heading (DD.groupDisputes). Deadlines use
+  // DD.countdown, i.e. DD.clock(): frozen at the recording in demo mode. Missing data shows a real empty state.
+  function updateStats() {
+    const { waiting, withPayPal } = DD.groupDisputes(rows);
+    document.getElementById("queue-eyebrow").replaceChildren(...DD.eyebrow("Queue"));
+    const dated = waiting.filter((r) => r.seller_response_due_date);
+    const states = dated.map((r) => DD.countdown(r.seller_response_due_date));
+    const dueSoon = states.filter((c) => c.urgent && !DD.isOverdue(c)).length;
+    const overdue = states.filter((c) => DD.isOverdue(c)).length;
+    const next = dated.map((r) => r.seller_response_due_date).sort()[0];
+    const total = DD.sumAmounts(waiting);
+    const chips = [
+      DD.statChip({ label: "waiting on you", value: String(waiting.length), tone: waiting.length ? "waiting" : "" }),
+      DD.statChip({ label: "due in under 72 hours", value: String(dueSoon) }),
+    ];
+    if (overdue) chips.push(DD.statChip({ label: "overdue", value: String(overdue), tone: "overdue" }));
+    chips.push(DD.statChip({ label: "in dispute, waiting on you", value: total || "None" }));
+    chips.push(next
+      ? DD.statChip({ label: "next deadline", value: DD.dueDate(next).split(",")[0],
+          note: el("span", { "data-due": next }, "in ", el("span", { class: "cd-main", text: DD.countdown(next).text })) })
+      : DD.statChip({ label: "next deadline", value: "None" }));
+    document.getElementById("queue-stats").replaceChildren(...chips);
+    // segment counts
+    const counts = { waiting: waiting.length, withPayPal: withPayPal.length, all: rows.length };
+    for (const span of document.querySelectorAll(".seg-count")) span.textContent = String(counts[span.dataset.count]);
+  }
+
   async function refresh() {
     const banner = document.getElementById("error");
     try {
@@ -187,8 +221,8 @@
       // With getRowId, AG Grid diffs the rows and flashes only the cells whose values changed.
       grid.setGridOption("rowData", rows);
       fillSelect("reason", [...new Set(rows.map((r) => r.reason).filter(Boolean))].sort(), DD.reasonLabel);
-      fillSelect("status", [...new Set(rows.map((r) => r.status).filter(Boolean))].sort(), DD.statusLabel);
       updateSummary();
+      updateStats();
       updateCount();
     } catch (err) {
       DD.live(false);
@@ -203,9 +237,17 @@
   stage.addEventListener("mouseleave", () => { clearTimeout(hoverTimer); hideReason(); });
 
   document.getElementById("search").addEventListener("input", (e) => grid.setGridOption("quickFilterText", e.target.value));
-  for (const key of ["reason", "status"]) {
-    document.getElementById(key).addEventListener("change", (e) => {
-      filters[key] = e.target.value;
+  document.getElementById("reason").addEventListener("change", (e) => {
+    filters.reason = e.target.value;
+    grid.onFilterChanged();
+  });
+  // Segmented status filter: Waiting on you / With PayPal / All. The same external filter the status
+  // dropdown used, with the same status values.
+  const segments = [...document.querySelectorAll(".segmented button")];
+  for (const button of segments) {
+    button.addEventListener("click", () => {
+      filters.status = button.dataset.status;
+      for (const b of segments) b.setAttribute("aria-pressed", String(b === button));
       grid.onFilterChanged();
     });
   }

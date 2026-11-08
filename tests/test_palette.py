@@ -38,6 +38,12 @@ def backgrounds():
     return out
 
 
+def section(marker):
+    """One section of app.css: from its marker to the next section marker, comments stripped."""
+    body = CSS.split(marker, 1)[1].split("/* ---- ", 1)[0]
+    return re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+
+
 def rules():
     """(selector, declarations) for every CSS rule, including rules inside @media blocks."""
     return [(sel.strip(), body) for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", AFTER_ROOT)]
@@ -186,7 +192,8 @@ def _lit_backgrounds():
                "ground lift + dark grain": over(lifted, "#000000", grain)}
     out = dict(grounds)
     lights = {"hero glow": (".hero-split::before", "glow-hero"), "soft hero glow": (".hero-split::before", "glow-hero-soft"),
-              "cursor spotlight": (".spotlight", "glow-spotlight")}
+              "cursor spotlight": (".spotlight", "glow-spotlight"),
+              "page hero glow": (".page-hero::before", "glow-page-hero")}
     for name, (selector, token) in lights.items():
         lighten, rule = _blends_lighten(selector)
         assert f"var(--{token})" in rule, (selector, token)
@@ -210,9 +217,10 @@ def test_text_and_marks_still_pass_on_top_of_the_glows():
 
 
 def test_lighting_uses_blue_and_neutral_tokens_only_and_never_moves():
-    phase = CSS.split("palette pass, phase 2: depth lighting")[1]
+    phase = section("palette pass, phase 2: depth lighting")
     lighting = [phase, re.search(r"(?m)^body \{[^}]+\}", CSS).group(0),
-                re.search(r"\.verdict-band > \.panel:first-child \{[^}]+\}", CSS).group(0)]
+                re.search(r"\.verdict-band > \.panel:first-child \{[^}]+\}", CSS).group(0),
+                re.search(r"\.page-hero::before \{[^}]+\}", CSS).group(0)]
     lighting += re.findall(r"--(?:shadow-\d|lift-ground|glow-[a-z-]+):[^;]+;", ROOT_BLOCK)
     for chunk in lighting:
         assert "--splash" not in chunk and "--danger" not in chunk, chunk[:80]
@@ -224,8 +232,10 @@ def test_lighting_uses_blue_and_neutral_tokens_only_and_never_moves():
 
 
 def test_lighting_leaves_grid_rows_and_the_approve_dialog_alone():
-    phase = CSS.split("palette pass, phase 2: depth lighting")[1]
+    phase = section("palette pass, phase 2: depth lighting")
     assert ".ag-row" not in phase and "dialog" not in phase and ".confirm" not in phase
+    later = re.sub(r"/\*.*?\*/", "", CSS.split("palette pass, phase 2: depth lighting")[1], flags=re.S)
+    assert "dialog" not in later and ".confirm" not in later  # no later section styles the dialog either
 
 
 # --- phase 3: cursor spotlight, card tilt and glare -----------------------------------------------
@@ -257,7 +267,7 @@ def test_tilt_is_at_most_7_degrees_and_effects_stay_off_grid_rows_and_the_dialog
     for js in (POINTER, OVERVIEW.split("pointer effects, on the shared DDPointer loop", 1)[1]):
         code = re.sub(r"//.*", "", js)  # the code, not the comments that explain the rule
         assert ".ag-" not in code and "dialog" not in code
-    phase = CSS.split("palette pass, phase 3")[1]
+    phase = section("palette pass, phase 3")
     assert ".ag-row" not in phase and "dialog" not in phase
 
 

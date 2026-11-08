@@ -198,7 +198,7 @@
     root.replaceChildren(el("h1", { class: "sr-only", text: "Overview" }), split, ticker(waiting, heroNext), pipe.node, cases);
     map.start();
     pipe.update(rows);
-    DD.reveal([cases]);
+    DD.revealStaggered([cases.querySelector(".stack-head"), ...cases.querySelectorAll(".case-card")]);
   }
 
   // The hero's countdown line ticks every second (not in demo mode, where it is frozen at the recording).
