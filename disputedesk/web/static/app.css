@@ -59,7 +59,7 @@ body.shell {
   grid-template-areas: "side top" "side main";
   min-height: 100vh;
 }
-body.shell > main { grid-area: main; width: 100%; }
+body.shell > main { grid-area: main; width: 100%; min-width: 0; }  /* wide content (the ticker track) never widens the page */
 
 .sidebar {
   grid-area: side; position: sticky; top: 0; height: 100vh; overflow-y: auto;
@@ -805,3 +805,71 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 /* ---- queue wording pass: status detail and "With PayPal" deadline ------------------------- */
 .status-detail { color: var(--muted); font-size: 14px; }
 .countdown.with-paypal .cd-main { color: var(--text); }
+
+/* ---- visual moments, phase 2: the case map beside the hero --------------------------------- */
+.hero-split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 12px 36px; align-items: center; }
+.hero-split .hero-line { font-size: clamp(56px, 6.6vw, 132px); }
+.case-map { margin: 0; container-type: inline-size; }
+.map-stage { position: relative; aspect-ratio: 560 / 400; }   /* the layout box; JS sets it per layout */
+.map-canvas, .map-flat { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.map-flat .map-orbit { fill: none; stroke: var(--rule); stroke-width: 1.2; }
+.map-flat .map-edge { stroke: var(--control-edge); stroke-width: 1.2; opacity: 0.6; }
+.map-flat .map-edge.is-defend { stroke: var(--accent); }
+.map-flat .map-edge.is-paypal { stroke-dasharray: 5 5; opacity: 0.5; }
+.map-flat .map-merchant { fill: var(--accent); }
+.map-flat .map-dot { stroke-width: 2; transition: r 0.15s ease; }
+.map-flat .map-dot.is-defend { fill: var(--accent); stroke: var(--accent); }
+.map-flat .map-dot.is-accept { fill: #d5dbe4; stroke: #d5dbe4; }
+.map-flat .map-dot.is-pending { fill: var(--ink); stroke: var(--muted); }
+.map-flat .map-dot.is-paypal { fill: var(--panel-2); stroke: var(--control-edge); }
+.map-flat .map-dot.is-hot { stroke: var(--focus); stroke-width: 4; }
+
+/* Labels: real links at the node positions; the text sits beside the node, away from the centre. */
+.map-labels { position: absolute; inset: 0; }
+.map-node { position: absolute; width: 0; height: 0; color: var(--text); text-decoration: none; }
+.mn-hit { position: absolute; width: 34px; height: 34px; left: -17px; top: -17px; border-radius: 50%; }
+.mn-text {
+  position: absolute; display: grid; gap: 1px; white-space: nowrap;
+  font-size: clamp(10px, 2.15cqw, 12.5px); line-height: 1.25; padding: 3px 6px; border-radius: 6px;
+}
+.side-right .mn-text { left: 18px; top: 0; transform: translateY(-50%); text-align: left; }
+.side-left .mn-text { right: 18px; top: 0; transform: translateY(-50%); text-align: right; }
+.mn-id { font-weight: 700; letter-spacing: 0.01em; }
+.mn-meta { display: inline-flex; gap: 0.6em; justify-content: inherit; color: var(--muted); }
+.side-left .mn-meta { justify-content: flex-end; }
+.is-defend .mn-kind { color: var(--accent); font-weight: 700; }
+.is-accept .mn-kind { color: var(--text); font-weight: 700; }
+.mn-due { font-variant-numeric: tabular-nums; }
+.mn-due.urgent { color: var(--urgent); }
+.map-node.is-paypal .mn-id { color: var(--muted); }
+.map-node:hover .mn-text, .map-node:focus-visible .mn-text { background: var(--panel-2); }
+.map-node:hover .mn-id { color: var(--accent); }
+.map-node:focus-visible { outline: none; }
+.map-node:focus-visible .mn-text, .map-node:focus-visible .mn-hit { outline: 2px solid var(--focus); outline-offset: 1px; }
+.map-merchant-label, .map-more {
+  position: absolute; transform: translate(-50%, 0); white-space: nowrap;
+  font-size: clamp(10px, 2.15cqw, 12.5px); color: var(--muted);
+}
+.map-more { transform: translate(-50%, -100%); font-weight: 700; color: var(--accent); }
+.map-more:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.map-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center; margin: 6px 0 0; font-size: 13px; }
+.lg { display: inline-flex; align-items: center; gap: 6px; }
+.lg-dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid currentColor; }
+.lg.is-defend .lg-dot { color: var(--accent); background: var(--accent); }
+.lg.is-accept .lg-dot { color: #d5dbe4; background: #d5dbe4; }
+.lg.is-pending .lg-dot { color: var(--muted); }
+.lg.is-paypal .lg-dot { color: var(--control-edge); background: var(--panel-2); width: 8px; height: 8px; }
+
+@media (max-width: 900px) {
+  .hero-split { grid-template-columns: minmax(0, 1fr); }
+  .hero-split .hero-line { font-size: clamp(56px, 13vw, 120px); }
+  .case-map { max-width: 560px; width: 100%; justify-self: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-flat .map-dot { transition: none; }
+}
+/* Compact (phone-width) maps: long IDs wrap at the last hyphen and the details stack. */
+.case-map.is-compact .mn-id .id-tail { display: block; }
+.case-map.is-compact .mn-meta { display: grid; gap: 0; }
+.case-map.is-compact .mn-hit { --hit: clamp(22px, 7.5cqw, 34px); width: var(--hit); height: var(--hit); left: calc(var(--hit) / -2); top: calc(var(--hit) / -2); }
+.case-map.is-compact .map-labels.has-nodes .map-merchant-label { display: none; }  /* no room by the centre */

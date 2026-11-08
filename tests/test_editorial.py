@@ -190,3 +190,101 @@ def test_deadline_cells_say_with_paypal_and_insights_uses_the_shared_clock():
     assert "DD.deadlineNode(p.data)" in QUEUE and "DD.deadlineNode(d)" in OVERVIEW + CASE
     assert "DD.clock()" in INSIGHTS and "Date.now()" not in INSIGHTS
     assert "groups.waiting.filter" in INSIGHTS and '"With PayPal"' in INSIGHTS
+
+
+# --- visual moments, phase 2: the case map beside the hero ------------------------------------
+
+import json as _json
+import shutil as _shutil
+import subprocess as _subprocess
+
+import pytest as _pytest
+
+CASEMAP = (WEB / "static" / "casemap.js").read_text(encoding="utf-8")
+OVERVIEW_HTML = (WEB / "overview.html").read_text(encoding="utf-8")
+
+_LAYOUT_PROBE = r"""
+const DDMap = require(process.argv[1]);
+const row = (i, status, decision) => ({ dispute_id: `PP-R-T${i}`, status, seller_response_due_date: status === "WAITING_FOR_SELLER_RESPONSE" ? "2026-11-15T00:00:00Z" : null,
+  decision: decision ? { status: "ok", decision } : null });
+const out = {};
+for (const [waiting, paypal] of [[0, 0], [1, 0], [0, 1], [2, 0], [2, 1], [6, 0], [4, 4], [9, 3]]) {
+  const w = Array.from({ length: waiting }, (_, i) => row(i, "WAITING_FOR_SELLER_RESPONSE", i % 3 === 2 ? null : i % 2 ? "ACCEPT" : "DEFEND"));
+  const p = Array.from({ length: paypal }, (_, i) => row(100 + i, "UNDER_REVIEW", "DEFEND"));
+  for (const compact of [false, true]) {
+  const plan = DDMap.layout({ waiting: w, withPayPal: p, withBuyer: [] }, DDMap.MAX_NODES, compact);
+  out[`${compact ? "c" : ""}${waiting}+${paypal}`] = { box: [plan.box.W, plan.box.H], more: plan.more, kinds: plan.nodes.map((n) => n.kind), ids: plan.nodes.map((n) => n.d.dispute_id),
+    pts: plan.nodes.map((n) => [n.x, n.y, n.side]) };
+  }
+}
+console.log(JSON.stringify({ max: DDMap.MAX_NODES, out }));
+"""
+
+
+def _layouts():
+    node = _shutil.which("node")
+    if not node:
+        _pytest.skip("Node.js is not installed")
+    done = _subprocess.run([node, "-e", _LAYOUT_PROBE, str(WEB / "static" / "casemap.js")],
+                           capture_output=True, text=True, timeout=30, check=True)
+    return _json.loads(done.stdout)
+
+
+def test_case_map_layout_handles_0_1_2_6_and_more_disputes():
+    res = _layouts()
+    out = res["out"]
+    assert res["max"] == 8
+    assert out["0+0"] == {"box": [560, 400], "more": 0, "kinds": [], "ids": [], "pts": []}
+    assert out["c0+0"]["box"] == [560, 720]  # phone widths: a taller box
+    assert out["c9+3"]["more"] == 4 and len(out["c9+3"]["ids"]) == 8
+    assert out["1+0"]["kinds"] == ["defend"] and out["1+0"]["pts"][0][2] == "right"
+    assert out["0+1"]["kinds"] == ["paypal"]  # a with-PayPal dispute still shows, dimmed
+    assert [p[2] for p in out["2+0"]["pts"]] == ["right", "left"]  # two nodes face each other
+    assert out["2+1"]["kinds"] == ["defend", "accept", "paypal"]  # waiting first, then with PayPal
+    assert out["6+0"]["kinds"] == ["defend", "accept", "pending", "accept", "defend", "pending"]
+    assert len(out["4+4"]["ids"]) == 8 and out["4+4"]["more"] == 0
+    assert len(out["9+3"]["ids"]) == 8 and out["9+3"]["more"] == 4  # capped at 8, the rest counted
+    assert "paypal" not in out["9+3"]["kinds"]  # every waiting dispute outranks a with-PayPal one
+    for case in out.values():
+        pts, (W, H) = case["pts"], case["box"]
+        assert len({(round(x), round(y)) for x, y, _ in pts}) == len(pts)  # no two nodes overlap
+        for x, y, side in pts:
+            assert 40 < x < W - 40 and 40 < y < H - 40, (x, y)
+        for i, (x1, y1, _) in enumerate(pts):  # nodes stay apart from each other
+            for x2, y2, _ in pts[i + 1:]:
+                assert ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5 > 40
+
+
+def test_case_map_labels_link_to_cases_and_use_the_shared_clock():
+    labels = between(CASEMAP, "function labels(plan", "function legend(plan")
+    assert "href: `/case/${encodeURIComponent(d.dispute_id)}`" in labels
+    assert "DD.countdown(d.seller_response_due_date)" in labels and '"data-due": d.seller_response_due_date' in labels
+    assert "Date.now()" not in CASEMAP  # countdowns go through DD.clock(), frozen in demo mode
+    assert 'paypal: "With PayPal"' in CASEMAP and 'Nothing waiting on you."' in CASEMAP
+    assert "`+${plan.more} more`" in labels and 'href: "/queue"' in labels
+    assert "fetch(" not in CASEMAP  # draws the rows the Overview already has
+
+
+def test_case_map_falls_back_to_flat_svg_and_frees_the_renderer():
+    create = between(CASEMAP, "function create(rows, ", "return { MAX_NODES")
+    assert "DD3D.unavailableReason()" in create and "view = flat(plan)" in create
+    gl = between(CASEMAP, "function webgl(plan, container, onLost)", "function create(rows, ")
+    for must in ("renderer.dispose()", "forceContextLoss()", "webglcontextlost", "io.disconnect()", "ro.disconnect()",
+                 "document.hidden", "1000 / 30"):
+        assert must in gl, must
+    assert "disposeMap();" in between(OVERVIEW, "function render(rows", "// The hero's countdown")
+    assert 'window.addEventListener("pagehide", disposeMap)' in OVERVIEW
+
+
+def test_overview_loads_the_pinned_three_js_and_collapses_the_map_on_narrow_screens():
+    assert "three.js/0.160.0/three.min.js" in OVERVIEW_HTML and 'integrity="sha512-' in OVERVIEW_HTML
+    order = [OVERVIEW_HTML.index(f"/static/{name}") for name in ("common.js", "graph3d.js", "casemap.js", "overview.js")]
+    assert order == sorted(order)
+    phase = CSS.split("visual moments, phase 2")[1]
+    narrow = phase.split("@media (max-width: 900px)")[1]
+    assert ".hero-split { grid-template-columns: minmax(0, 1fr); }" in narrow
+
+
+def test_wide_content_never_widens_the_page_on_phones():
+    # The ticker track is max-content wide; the shell's grid item must be allowed to shrink below it.
+    assert re.search(r"body\.shell > main \{[^}]*min-width: 0;", CSS)

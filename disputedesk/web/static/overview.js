@@ -12,6 +12,24 @@
   const banner = document.getElementById("error");
   let lastKey = "";
   let heroNext = null;   // the waiting dispute the hero counts down to
+  let map = null;        // the case map beside the hero (DDMap); freed before every re-render
+  const disposeMap = () => { if (map) { map.dispose(); map = null; } };
+  window.addEventListener("pagehide", disposeMap);
+  // The map's layout follows its own width (narrow column or phone): swap it when that crosses over.
+  let lastRows = [];
+  const mapWidth = () => { const s = root.querySelector(".hero-split"); return s ? s.clientWidth : root.clientWidth; };
+  const wantCompact = () => {
+    const w = mapWidth();
+    return (window.matchMedia("(max-width: 900px)").matches ? w : w / 2.1) < DDMap.COMPACT_BELOW;
+  };
+  new ResizeObserver(() => {
+    if (!map || map.plan.compact === wantCompact()) return;
+    const old = map;
+    map = DDMap.create(lastRows, { compact: !old.plan.compact });
+    old.node.replaceWith(map.node);
+    old.dispose();
+    map.start();
+  }).observe(root);
 
   const isOpen = (d) => d.status !== "RESOLVED";
   const dueMs = (d) => Date.parse(d.seller_response_due_date) || Infinity;
@@ -139,6 +157,8 @@
   }
 
   function render(rows, firstRender) {
+    disposeMap();
+    lastRows = rows;
     if (!rows.length) {
       heroNext = null;
       root.replaceChildren(el("div", { class: "state" },
@@ -165,7 +185,11 @@
           el("div", { class: "case-cards" }, ...open.map(caseCard)))
       : el("section", { class: "folders" }, el("p", { class: "lede", text: `All ${rows.length} disputes in the local store are resolved.` }));
 
-    root.replaceChildren(el("h1", { class: "sr-only", text: "Overview" }), hero(waiting, heroNext, firstRender), ticker(waiting, heroNext), cases);
+    // The hero: stacked type on the left, the case map on the right (below it on narrow screens).
+    map = DDMap.create(rows, { compact: wantCompact() });
+    const split = el("div", { class: "hero-split" }, hero(waiting, heroNext, firstRender), map.node);
+    root.replaceChildren(el("h1", { class: "sr-only", text: "Overview" }), split, ticker(waiting, heroNext), cases);
+    map.start();
     DD.reveal([cases]);
   }
 
