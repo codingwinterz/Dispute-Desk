@@ -73,12 +73,41 @@ const DD = (() => {
     node.querySelector(".live-label").textContent = ok ? "Live" : "Offline";
     updateAge();
   }
-  function updateAge() {
-    const age = document.querySelector("#live .live-age");
-    if (!age) return;
-    if (!lastOk) { age.textContent = ""; return; }
+  function ageText() {
+    if (!lastOk) return "";
     const s = Math.max(0, Math.round((Date.now() - lastOk) / 1000));
-    age.textContent = s < 2 ? "updated just now" : s < 120 ? `updated ${s}s ago` : `updated ${Math.round(s / 60)} min ago`;
+    return s < 2 ? "updated just now" : s < 120 ? `updated ${s}s ago` : `updated ${Math.round(s / 60)} min ago`;
+  }
+  function updateAge() {
+    const text = ageText();
+    for (const node of document.querySelectorAll("#live .live-age, [data-live-age]")) {
+      if (node.textContent !== text) node.textContent = text;
+    }
+  }
+
+  // ---- motion helpers --------------------------------------------------------------------
+  const reducedMotion = () => Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  // Pause every CSS animation while the tab is hidden.
+  document.addEventListener("visibilitychange", () => document.documentElement.classList.toggle("is-hidden", document.hidden));
+
+  // Scroll reveal, once per element. Content is visible by default: only elements below the fold are
+  // hidden, and only when motion is allowed and IntersectionObserver exists, so nothing can stay blank.
+  function reveal(nodes) {
+    if (reducedMotion() || !("IntersectionObserver" in window)) return;
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        e.target.classList.add("is-revealed");
+        e.target.classList.remove("reveal-pending");
+        io.unobserve(e.target);
+      }
+    }, { rootMargin: "0px 0px -8% 0px" });
+    for (const n of nodes) {
+      if (!n || n.getBoundingClientRect().top < window.innerHeight) continue;  // already on screen
+      n.classList.add("reveal-pending");
+      io.observe(n);
+    }
   }
 
   // PayPal enums -> plain words. Unknown values fall back to a readable form, never dropped.
@@ -120,8 +149,20 @@ const DD = (() => {
     }
   }
 
+  // One clock for every countdown. In demo mode the data is a recording, so countdowns are frozen at
+  // the snapshot's recorded time (and labelled with it) instead of running against today's date.
+  function clock() {
+    return mode.demo && mode.recorded_at ? Date.parse(mode.recorded_at) : Date.now();
+  }
+
+  function recordedLabel() {
+    return mode.demo && mode.recorded_at
+      ? new Date(mode.recorded_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+      : "";
+  }
+
   // "2d 4h", "5h 12m", "42m 10s"; overdue says so.
-  function countdown(dueIso, now = Date.now()) {
+  function countdown(dueIso, now = clock()) {
     if (!dueIso) return { text: "No due date", urgent: false };
     const ms = Date.parse(dueIso) - now;
     if (Number.isNaN(ms)) return { text: "No due date", urgent: false };
@@ -140,7 +181,8 @@ const DD = (() => {
   // Any element with data-due shows a live countdown; one ticker updates them all.
   function tick() {
     updateAge();
-    const now = Date.now();
+    if (document.hidden) return;  // nothing to update while the tab is in the background
+    const now = clock();
     for (const node of document.querySelectorAll("[data-due]")) {
       const c = countdown(node.dataset.due, now);
       const main = node.querySelector(".cd-main") || node;
@@ -154,7 +196,7 @@ const DD = (() => {
     const c = countdown(dueIso);
     return el("span", { class: `countdown${c.urgent ? " urgent" : ""}`, "data-due": dueIso || "" },
       el("span", { class: "cd-main", text: c.text }),
-      withDate && dueIso ? el("span", { class: "sub", text: `Due ${dueDate(dueIso)}` }) : null);
+      withDate && dueIso ? el("span", { class: "sub", text: mode.demo ? `Due ${dueDate(dueIso)}, as recorded ${recordedLabel()}` : `Due ${dueDate(dueIso)}` }) : null);
   }
 
   function sourceTag(source) {
@@ -178,6 +220,6 @@ const DD = (() => {
       el("span", { text: String(score) }), bar);
   }
 
-  return { el, renderNav, live, mode, modeReady, DEMO_LABEL, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
+  return { el, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
            dueDate, sourceTag, decisionChip, riskNode, tick };
 })();
