@@ -904,3 +904,26 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 @media (prefers-reduced-motion: reduce) {
   .pipeline.is-flowing .pipe-rail::after { animation: none; display: none; }
 }
+
+/* ---- visual moments, phase 4: the verdict stamp after a successful approval ------------------ */
+.verdict-stamp {
+  align-self: center; margin: 0 auto 0 28px; pointer-events: none;
+  display: grid; justify-items: center; gap: 2px; padding: 8px 18px 9px;
+  color: var(--accent); border: 3px solid currentColor; border-radius: 8px;
+  box-shadow: inset 0 0 0 2px var(--panel-2), inset 0 0 0 4px currentColor;   /* the stamp's double rule */
+  transform: rotate(-7deg); opacity: 0.92;
+}
+.stamp-word { font-family: var(--font-display); font-weight: 900; font-size: clamp(30px, 3.4vw, 46px); line-height: 0.95; text-transform: uppercase; letter-spacing: 0.04em; }
+.stamp-line { font-size: 12px; font-weight: 700; font-variant-caps: all-small-caps; letter-spacing: 0.08em; }
+.verdict-stamp.is-landing { animation: stamp-land 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.2) 0.15s both; }
+@keyframes stamp-land {
+  from { transform: rotate(-16deg) scale(1.9); opacity: 0; }
+  70% { transform: rotate(-6deg) scale(0.96); opacity: 1; }
+  to { transform: rotate(-7deg) scale(1); opacity: 0.92; }
+}
+@media (max-width: 900px) {
+  .verdict-stamp { margin-left: 12px; padding: 6px 12px 7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .verdict-stamp.is-landing { animation: none; }
+}

@@ -511,6 +511,11 @@
     // Hierarchy: 1) decision and risk (full width, with the timeline), 2) reasons beside the evidence
     // path, 3) draft and approval. Same panels as before; only their placement changes.
     const panels = decisionPanels(dispute, decision, draft, submit).filter(Boolean);
+    // Verdict stamp: only after an approval sent from this page succeeded (the existing success state).
+    const sent = submit && submit.submission;
+    if (lastResult && lastResult.ok && sent && sent.state === "succeeded" && panels[0] && panels[0].classList.contains("verdict-panel")) {
+      panels[0].querySelector(".verdict-word").after(DDStamp.create(sent));  // between the verdict and the risk score
+    }
     const band = el("div", { class: "verdict-band" }, panels[0], caseTimeline(dispute, decision, draft, submit));
     const left = el("div", { class: "case-col" }, ...panels.slice(1));
     const right = el("div", { class: "case-col" }, ...((decision && decision.status === "ok" && graphPanel(decision)) || [

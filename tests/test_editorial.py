@@ -344,3 +344,25 @@ def test_every_page_has_the_folder_favicon():
     assert "#e2b85c" in svg and "<script" not in svg
     for page in WEB.glob("*.html"):
         assert '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">' in page.read_text(encoding="utf-8"), page.name
+
+
+# --- visual moments, phase 4: the verdict stamp ------------------------------------------------
+
+STAMP = (WEB / "static" / "stamp.js").read_text(encoding="utf-8")
+
+
+def test_stamp_appears_only_after_a_successful_approval_from_this_page():
+    wiring = between(CASE, "// Verdict stamp:", "const band = el(")
+    assert 'lastResult && lastResult.ok && sent && sent.state === "succeeded"' in wiring
+    assert "DDStamp.create(sent)" in wiring
+    assert CASE.count("DDStamp") == 1  # nowhere else: old submissions and demo data never get a stamp
+    assert "lastResult = result;" in between(CASE, "function openConfirm(d, submit)", "function citeTitle(")  # set only by the existing flow
+    assert '<script src="/static/stamp.js"></script>' in (WEB / "case.html").read_text(encoding="utf-8")
+
+
+def test_stamp_is_visual_only_and_static_without_motion():
+    assert "fetch(" not in STAMP and '"aria-hidden": "true"' in STAMP
+    assert 'provide_evidence: "Defended", accept_claim: "Accepted"' in STAMP
+    assert "!DD.reducedMotion() && !played.has(key)" in STAMP  # lands once, never under reduced motion
+    phase = CSS.split("visual moments, phase 4")[1]
+    assert ".verdict-stamp.is-landing { animation: none; }" in phase.split("@media (prefers-reduced-motion: reduce)")[1]
