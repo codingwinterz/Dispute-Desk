@@ -211,18 +211,19 @@
 
   // ---- pointer effects, on the shared DDPointer loop (off on touch, under reduced motion, in hidden tabs) ----
 
-  // Gentle parallax on the two hero lines: eased pointer position -> CSS variables.
+  // Multi-layer hero parallax: one eased pointer position -> CSS variables on the hero container; each
+  // layer (glow pool, two type lines, caption) moves at its own rate, set in app.css.
   const par = { x: 0, y: 0 };
   DDPointer.subscribe((dt, p) => {
     const tx = p.inside ? (p.x / p.vw - 0.5) * 2 : 0, ty = p.inside ? (p.y / p.vh - 0.5) * 2 : 0;
     par.x = DDPointer.ease(par.x, tx, dt, 160);
     par.y = DDPointer.ease(par.y, ty, dt, 160);
-    const board = root.querySelector(".hero-board");
-    if (board) { board.style.setProperty("--px", par.x.toFixed(3)); board.style.setProperty("--py", par.y.toFixed(3)); }
+    const hero = root.querySelector(".hero-split");
+    if (hero) { hero.style.setProperty("--px", par.x.toFixed(3)); hero.style.setProperty("--py", par.y.toFixed(3)); }
     return !(DDPointer.settled(par.x, tx, 0.002) && DDPointer.settled(par.y, ty, 0.002));
   }, () => {
-    const board = root.querySelector(".hero-board");
-    if (board) { board.style.removeProperty("--px"); board.style.removeProperty("--py"); }
+    const hero = root.querySelector(".hero-split");
+    if (hero) { hero.style.removeProperty("--px"); hero.style.removeProperty("--py"); }
   });
 
   // Tilt and glare on the case cards: up to MAX_TILT degrees toward the pointer, with a soft blue glare

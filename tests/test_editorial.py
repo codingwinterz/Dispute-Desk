@@ -268,7 +268,7 @@ def test_case_map_labels_link_to_cases_and_use_the_shared_clock():
 def test_case_map_falls_back_to_flat_svg_and_frees_the_renderer():
     create = between(CASEMAP, "function create(rows, ", "return { MAX_NODES")
     assert "DD3D.unavailableReason()" in create and "view = flat(plan)" in create
-    gl = between(CASEMAP, "function webgl(plan, container, onLost)", "function create(rows, ")
+    gl = between(CASEMAP, "function webgl(plan, container, onLost", "function create(rows, ")
     for must in ("renderer.dispose()", "forceContextLoss()", "webglcontextlost", "io.disconnect()", "ro.disconnect()",
                  "document.hidden", "1000 / 30"):
         assert must in gl, must

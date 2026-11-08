@@ -268,3 +268,50 @@ def test_spotlight_is_blue_and_every_page_loads_the_shared_pointer_module():
     for page in WEB.glob("*.html"):
         html = page.read_text(encoding="utf-8")
         assert html.index("/static/common.js") < html.index("/static/pointer.js"), page.name
+
+
+# --- phase 4: hero layers, case map camera, node hover --------------------------------------------
+
+CASEMAP = (WEB / "static" / "casemap.js").read_text(encoding="utf-8")
+
+
+def test_hero_parallax_has_layers_moving_at_different_rates():
+    phase = CSS.split("palette pass, phase 4")[1]
+    rates = re.findall(r"calc\(var\(--px, 0\) \* (-?\d+)px\)", phase)
+    depths = re.findall(r"\.hero-line:nth-child\(\d\) \{ --depth: (\d+)px; \}", phase)
+    assert sorted(set(map(int, rates + depths))) == sorted(map(int, rates + depths))  # every layer differs
+    assert len(rates + depths) >= 4 and any(int(r) < 0 for r in rates)  # the glow drifts against the pointer
+    assert 'hero.style.setProperty("--px"' in OVERVIEW and "transition: transform 0.25s" not in CSS
+    reduced = phase.split("@media (prefers-reduced-motion: reduce)")[1]
+    assert ".hero-board .cap, .hero-split::before { transform: none !important; }" in reduced
+
+
+def test_map_camera_follows_the_pointer_on_the_shared_loop_and_is_released():
+    gl = CASEMAP.split("function webgl(plan, container, onLost", 1)[1].split("function create(rows, ", 1)[0]
+    assert "DDPointer.subscribe(" in gl and "unsubscribe();" in gl
+    assert "world.rotation.set(tilt.x, tilt.y, 0)" in gl and "DDPointer.ease(tilt.y" in gl
+    assert "requestAnimationFrame(frame)" in gl  # the map's own render loop draws; pointer maths stays on DDPointer
+    assert 'addEventListener("pointermove"' not in CASEMAP  # pointer position only comes from DDPointer
+
+
+def test_raycast_is_throttled_and_only_after_the_pointer_moves():
+    assert "const RAY_MS = 60;" in CASEMAP
+    assert "now - lastRay >= RAY_MS && (p.x !== lastPX || p.y !== lastPY)" in CASEMAP
+    assert "raycaster.setFromCamera(ndc, camera)" in CASEMAP and "intersectObjects(picks, false)" in CASEMAP
+    handlers = re.findall(r'addEventListener\("(?:scroll|resize)", markDirty', CASEMAP)
+    assert len(handlers) == 2  # scroll/resize only mark the rect dirty; it is read inside the loop
+
+
+def test_hover_lifts_and_glows_blue_and_shows_id_verdict_and_countdown():
+    assert "n.group.position.z = n.baseZ + n.h * 22" in CASEMAP and "n.shine.material.opacity = n.h * 0.9" in CASEMAP
+    chip = CASEMAP.split("function showChip(plan, ui, i)", 1)[1].split("\n  }\n", 1)[0]
+    assert "d.dispute_id" in chip and "KIND_WORD[node.kind]" in chip
+    assert "DD.countdown(d.seller_response_due_date)" in chip and '"data-due"' in chip  # DD.clock() in demo mode
+    assert '"aria-hidden": "true"' in CASEMAP.split('class: "map-hover"', 1)[1][:40]
+    assert CASEMAP.count('"--splash"') == 1  # the waiting ring only; the hover glow is blue
+
+
+def test_flat_fallback_is_kept_and_shows_the_hover_label_too():
+    create = CASEMAP.split("function create(rows, ", 1)[1]
+    assert "if (off) view = flat(plan);" in create and "showChip(plan, ui," in create
+    assert "setHover() {}" in CASEMAP.split("function flat(plan)", 1)[1].split("function palette()", 1)[0]

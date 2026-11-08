@@ -58,7 +58,8 @@ const DDMap = (() => {
     const { el } = DD;
     const { W, H, CY } = plan.box;
     const pct = (v, of) => `${((v / of) * 100).toFixed(3)}%`;
-    const layer = el("div", { class: `map-labels${plan.nodes.length ? " has-nodes" : ""}` });
+    const layer = el("div", { class: `map-labels${plan.nodes.length ? " has-nodes" : ""}`, style: `--map-w:${W}` });
+    const links = [];
     plan.nodes.forEach((node, i) => {
       const d = node.d;
       const sr = (text) => el("span", { class: "sr-only", text });  // spoken separators, hidden on screen
@@ -79,13 +80,39 @@ const DDMap = (() => {
       link.addEventListener("focus", () => onHover(i));
       link.addEventListener("blur", () => onHover(-1));
       layer.append(link);
+      links.push(link);
     });
+    // The hover label: dispute ID, verdict and countdown for the hovered or focused node. It repeats the
+    // link's own text, so it is hidden from screen readers.
+    const chip = el("div", { class: "map-hover", "aria-hidden": "true", hidden: true });
+    layer.append(chip);
     layer.append(el("span", { class: "map-merchant-label", style: `left:50%;top:${pct(CY + 44, H)}` },
       plan.nodes.length ? "Your store" : "Your store. Nothing waiting on you."));
     if (plan.more > 0) {
       layer.append(el("a", { class: "map-more", href: "/queue", style: `left:50%;top:${pct(H - 14, H)}` }, `+${plan.more} more`));
     }
-    return layer;
+    return { layer, links, chip };
+  }
+
+  // Fill and place the hover label for node i (or hide it for -1). Countdown from DD.countdown, i.e.
+  // DD.clock(): the recording's time in demo mode; the shared tick keeps it current through data-due.
+  function showChip(plan, ui, i) {
+    const { chip } = ui;
+    if (i < 0 || !plan.nodes[i]) { chip.hidden = true; return; }
+    const node = plan.nodes[i], d = node.d, { el } = DD, { W, H } = plan.box;
+    const parts = [el("span", { class: "mh-id num", text: d.dispute_id }), el("span", { class: `mh-kind is-${node.kind}`, text: KIND_WORD[node.kind] })];
+    if (node.kind !== "paypal" && d.seller_response_due_date) {
+      const c = DD.countdown(d.seller_response_due_date);
+      parts.push(el("span", { class: `mh-due${DD.isOverdue(c) ? " overdue" : ""}`, "data-due": d.seller_response_due_date },
+        el("span", { class: "cd-main", text: c.text }), DD.dueSoonChip(c)));
+    }
+    chip.replaceChildren(...parts);
+    chip.style.left = `${((node.x / W) * 100).toFixed(3)}%`;
+    chip.style.top = `${((node.y / H) * 100).toFixed(3)}%`;
+    const link = ui.links[i];
+    chip.style.setProperty("--dx", link.style.getPropertyValue("--dx") || "0");
+    chip.style.setProperty("--dy", link.style.getPropertyValue("--dy") || "0");
+    chip.hidden = false;
   }
 
   // The full ID, split after its last hyphen so narrow maps can wrap it onto two lines (CSS decides).
@@ -130,7 +157,7 @@ const DDMap = (() => {
       svg.append(dot);
       return dot;
     });
-    return { node: svg, highlight: (i) => dots.forEach((dot, j) => dot.classList.toggle("is-hot", j === i)), dispose() {} };
+    return { node: svg, highlight: (i) => dots.forEach((dot, j) => dot.classList.toggle("is-hot", j === i)), setHover() {}, dispose() {} };
   }
 
   // ---- three.js (motion allowed, WebGL available) -----------------------------------------------
@@ -157,7 +184,10 @@ const DDMap = (() => {
     return new THREE.CanvasTexture(c);
   }
 
-  function webgl(plan, container, onLost) {
+  const RAY_MS = 60;        // raycast at most this often, and only after the pointer moved
+  const TILT_Y = 0.30, TILT_X = 0.20;   // radians: how far the map turns toward the pointer
+
+  function webgl(plan, container, onLost, ui, onRayHover) {
     const { W, H, CX, CY, RX, RY } = plan.box;
     const COLORS = palette();
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
@@ -177,55 +207,122 @@ const DDMap = (() => {
     const key = new THREE.DirectionalLight(COLORS.light, 1.2);
     key.position.set(-120, 160, 220);
     scene.add(key);
-    const at = (x, y) => new THREE.Vector3(x - CX, CY - y, 0);
+    const at = (x, y, z = 0) => new THREE.Vector3(x - CX, CY - y, z);
     const glow = glowTexture();
+    // Everything turns together toward the pointer; the camera stays put so labels can be projected.
+    const world = new THREE.Group();
+    scene.add(world);
 
     // Merchant: a slowly turning blue crystal inside a tilted orbit ring.
     const merchant = new THREE.Mesh(new THREE.OctahedronGeometry(24, 0),
       new THREE.MeshStandardMaterial({ color: COLORS.merchant, roughness: 0.35, metalness: 0.2, emissive: COLORS.merchant, emissiveIntensity: 0.25, flatShading: true }));
-    scene.add(merchant);
+    world.add(merchant);
     const ring = new THREE.Mesh(new THREE.TorusGeometry(38, 1.1, 8, 72),
       new THREE.MeshBasicMaterial({ color: COLORS.accept, transparent: true, opacity: 0.45 }));
     ring.rotation.x = 1.15;
-    scene.add(ring);
+    world.add(ring);
     const orbit = new THREE.Line(new THREE.BufferGeometry().setFromPoints(
       Array.from({ length: 97 }, (_, i) => at(CX + RX * Math.cos((i / 96) * 2 * Math.PI), CY + RY * Math.sin((i / 96) * 2 * Math.PI)))),
       new THREE.LineBasicMaterial({ color: COLORS.edge, transparent: true, opacity: 0.55 }));
-    scene.add(orbit);
+    world.add(orbit);
 
-    const meshes = [], pulses = [];
+    // Depth: disputes waiting on you stand forward, with-PayPal ones sit back, so turning shows parallax.
+    const meshes = [], pulses = [], nodes = [], picks = [];
     plan.nodes.forEach((node, i) => {
-      const p = at(node.x, node.y);
       const dim = node.kind === "paypal";
+      const baseZ = dim ? -28 : 28;
+      const p = at(node.x, node.y, baseZ);
+      const group = new THREE.Group();
+      group.position.copy(p);
+      world.add(group);
       const edgeMat = dim
         ? new THREE.LineDashedMaterial({ color: COLORS.edge, dashSize: 5, gapSize: 5, transparent: true, opacity: 0.8 })
         : new THREE.LineBasicMaterial({ color: node.kind === "defend" ? COLORS.defend : COLORS.pending, transparent: true, opacity: 0.45 });
       const edge = new THREE.Line(new THREE.BufferGeometry().setFromPoints([at(CX, CY), p]), edgeMat);
       if (dim) edge.computeLineDistances();
-      scene.add(edge);
+      world.add(edge);
       // Defend: solid blue. Accept: outlined (wireframe) light blue. Pending: grey wireframe. With PayPal: dimmed blue.
       const mat = node.kind === "pending" || node.kind === "accept"
         ? new THREE.MeshBasicMaterial({ color: COLORS[node.kind], wireframe: true })
         : new THREE.MeshStandardMaterial({ color: COLORS[node.kind], roughness: 0.4, metalness: 0.1, transparent: dim, opacity: dim ? 0.45 : 1 });
       const outlined = node.kind === "pending" || node.kind === "accept";  // a sparse wireframe reads as an outline
       const mesh = new THREE.Mesh(new THREE.SphereGeometry(dim ? 8 : 13, outlined ? 10 : 28, outlined ? 6 : 18), mat);
-      mesh.position.copy(p);
-      scene.add(mesh);
+      group.add(mesh);
       meshes.push(mesh);
       if (!dim) {  // waiting on you: a tangerine ring around the node
         const halo = new THREE.Mesh(new THREE.TorusGeometry(19, 1.4, 8, 48), new THREE.MeshBasicMaterial({ color: COLORS.ring }));
-        halo.position.copy(p);
-        scene.add(halo);
+        group.add(halo);
       }
+      // Hover glow (blue, never tangerine) and an invisible, larger pick target for the raycaster.
+      const shine = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
+      shine.scale.set(64, 64, 1);
+      group.add(shine);
+      const pick = new THREE.Mesh(new THREE.SphereGeometry(dim ? 16 : 22, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+      pick.userData.index = i;
+      group.add(pick);
+      picks.push(pick);
+      nodes.push({ group, mesh, shine, baseZ, h: 0, x: node.x, y: node.y });
       if (!dim) {  // waiting on you: a spark travels from the dispute to the merchant
         const spark = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
         spark.scale.set(14, 14, 1);
-        scene.add(spark);
+        world.add(spark);
         pulses.push({ spark, from: p, to: at(CX, CY), phase: i * 0.37 });
       }
     });
 
-    let hot = -1, raf = 0, last = 0, t = 0, inView = true, disposed = false;
+    // ---- pointer: on the shared DDPointer loop (numbers only; the render loop below draws them) ----
+    const raycaster = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    const tilt = { x: 0, y: 0 };
+    let linkHot = -1, rayHot = -1, lastRay = 0, lastPX = NaN, lastPY = NaN, rect = null, rectDirty = true;
+    const markDirty = () => { rectDirty = true; };
+    window.addEventListener("scroll", markDirty, { passive: true });
+    window.addEventListener("resize", markDirty, { passive: true });
+    const hotIndex = () => (linkHot >= 0 ? linkHot : rayHot);
+    const unsubscribe = DDPointer.subscribe((dt, p) => {
+      if (disposed) return false;
+      if (rectDirty) { const r = container.getBoundingClientRect(); rect = { l: r.left, t: r.top, w: r.width, h: r.height }; rectDirty = false; }
+      const cx = rect.l + rect.w / 2, cy = rect.t + rect.h / 2;
+      const tx = p.inside ? Math.max(-1, Math.min(1, (p.x - cx) / (p.vw / 2))) : 0;
+      const ty = p.inside ? Math.max(-1, Math.min(1, (p.y - cy) / (p.vh / 2))) : 0;
+      tilt.y = DDPointer.ease(tilt.y, tx * TILT_Y, dt, 180);
+      tilt.x = DDPointer.ease(tilt.x, ty * TILT_X, dt, 180);
+      // Raycast: throttled, and only when the pointer moved over the map.
+      const now = performance.now();
+      const over = p.inside && p.x >= rect.l && p.x <= rect.l + rect.w && p.y >= rect.t && p.y <= rect.t + rect.h;
+      if (!over) { if (rayHot !== -1) { rayHot = -1; onRayHover(hotIndex()); } }
+      else if (now - lastRay >= RAY_MS && (p.x !== lastPX || p.y !== lastPY)) {
+        lastRay = now; lastPX = p.x; lastPY = p.y;
+        ndc.set(((p.x - rect.l) / rect.w) * 2 - 1, -(((p.y - rect.t) / rect.h) * 2 - 1));
+        raycaster.setFromCamera(ndc, camera);
+        const hit = raycaster.intersectObjects(picks, false)[0];
+        const idx = hit ? hit.object.userData.index : -1;
+        if (idx !== rayHot) { rayHot = idx; onRayHover(hotIndex()); }
+      }
+      // Hovered node lifts toward the viewer, grows and glows; the others settle back.
+      let moving = false;
+      nodes.forEach((n, i) => {
+        const target = i === hotIndex() ? 1 : 0;
+        n.h = DDPointer.ease(n.h, target, dt, 120);
+        if (!DDPointer.settled(n.h, target, 0.004)) moving = true;
+      });
+      return moving || !(DDPointer.settled(tilt.y, tx * TILT_Y, 0.0005) && DDPointer.settled(tilt.x, ty * TILT_X, 0.0005));
+    }, () => { tilt.x = tilt.y = 0; rayHot = -1; nodes.forEach((n) => { n.h = linkHot === nodes.indexOf(n) ? 1 : 0; }); });
+
+    // Keep each HTML label on its node: project the node into layout units, offset the link by the change.
+    const v = new THREE.Vector3();
+    function placeLabels() {
+      nodes.forEach((n, i) => {
+        n.group.getWorldPosition(v).project(camera);
+        const dx = ((v.x + 1) / 2) * W - n.x, dy = ((1 - v.y) / 2) * H - n.y;
+        const link = ui.links[i];
+        link.style.setProperty("--dx", dx.toFixed(2));
+        link.style.setProperty("--dy", dy.toFixed(2));
+        if (i === hotIndex() && !ui.chip.hidden) { ui.chip.style.setProperty("--dx", dx.toFixed(2)); ui.chip.style.setProperty("--dy", dy.toFixed(2)); }
+      });
+    }
+
+    let raf = 0, last = 0, t = 0, inView = true, disposed = false;
     const FRAME_MS = 1000 / 30;            // at most 30 frames a second
     function frame(now) {
       raf = 0;
@@ -241,8 +338,14 @@ const DDMap = (() => {
           pl.spark.position.lerpVectors(pl.from, pl.to, k);
           pl.spark.material.opacity = Math.sin(k * Math.PI);
         }
-        meshes.forEach((m, i) => m.scale.setScalar(i === hot ? 1.3 : 1));
+        world.rotation.set(tilt.x, tilt.y, 0);
+        for (const n of nodes) {
+          n.group.position.z = n.baseZ + n.h * 22;
+          n.mesh.scale.setScalar(1 + n.h * 0.3);
+          n.shine.material.opacity = n.h * 0.9;
+        }
         renderer.render(scene, camera);
+        placeLabels();
       }
       raf = requestAnimationFrame(frame);
     }
@@ -258,6 +361,7 @@ const DDMap = (() => {
       canvas.style.width = "100%";
       canvas.style.height = "auto";
       renderer.render(scene, camera);
+      rectDirty = true;
     };
     const ro = new ResizeObserver(resize);
     ro.observe(container);
@@ -265,12 +369,15 @@ const DDMap = (() => {
     return {
       node: canvas,
       start() { resize(); run(); },
-      highlight(i) { hot = i; },
+      highlight(i) { linkHot = i; DDPointer.kick(); },
       running: () => Boolean(raf),
       dispose() {
         if (disposed) return;
         disposed = true;
         stop();
+        unsubscribe();
+        window.removeEventListener("scroll", markDirty);
+        window.removeEventListener("resize", markDirty);
         io.disconnect();
         ro.disconnect();
         document.removeEventListener("visibilitychange", onVisibility);
@@ -296,7 +403,9 @@ const DDMap = (() => {
     const plan = layout(DD.groupDisputes(rows), MAX_NODES, compact);
     const stage = el("div", { class: "map-stage", style: `aspect-ratio:${plan.box.W} / ${plan.box.H}` });
     const off = typeof DD3D === "undefined" ? "3D unavailable" : DD3D.unavailableReason();
-    let view;
+    let view, linkHot = -1, rayHot = -1;
+    const ui = labels(plan, (i) => { linkHot = i; view.highlight(i); showChip(plan, ui, linkHot >= 0 ? linkHot : rayHot); });
+    const onRayHover = (i) => { rayHot = i; showChip(plan, ui, linkHot >= 0 ? linkHot : i); };
     if (off) view = flat(plan);
     else {
       try {
@@ -306,11 +415,12 @@ const DDMap = (() => {
           lost.node.replaceWith(view.node);
           lost.dispose();
           section.classList.replace("is-3d", "is-flat");
-        });
+          ui.links.forEach((l) => { l.style.removeProperty("--dx"); l.style.removeProperty("--dy"); });
+        }, ui, onRayHover);
       } catch { view = flat(plan); }
     }
     const mode = view.node.tagName.toLowerCase() === "canvas" ? "3d" : "flat";
-    stage.append(view.node, labels(plan, (i) => view.highlight(i)));
+    stage.append(view.node, ui.layer);
     const parts = [`${plan.waiting} waiting on you`];
     if (plan.withPayPal) parts.push(`${plan.withPayPal} with PayPal`);
     const section = el("section", { class: `case-map is-${mode}${compact ? " is-compact" : ""}`, "aria-label": `Case map: ${parts.join(", ")}` },
