@@ -61,7 +61,62 @@
 
   const emptyCopy = "No disputes yet. When a buyer opens one in the PayPal sandbox, the poller picks it up within 10 seconds and it appears here.";
 
-  const grid = agGrid.createGrid(document.getElementById("grid"), {
+  // Main reason on hover/focus: an overlay outside AG Grid's rows (columns and rendering untouched).
+  // Reads the existing GET /api/decisions/{id} once per dispute and decision; nothing is fetched for
+  // rows without a recommendation, and nothing is shown when there is no stored reason.
+  const gridEl = document.getElementById("grid");
+  const stage = el("div", { class: "grid-stage" });
+  gridEl.parentNode.insertBefore(stage, gridEl);
+  const reasonLine = el("div", { class: "row-reason", role: "status", "aria-live": "polite", hidden: true });
+  stage.append(gridEl, reasonLine);
+  const reasons = new Map();  // dispute_id -> { key, text } ; key = decision created_at
+  let reasonFor = null, hoverTimer = 0;
+
+  async function topReason(row) {
+    const d = row.decision;
+    if (!d || d.status !== "ok") return "";
+    const cached = reasons.get(row.dispute_id);
+    if (cached && cached.key === d.created_at) return cached.text;
+    try {
+      const resp = await fetch(`/api/decisions/${encodeURIComponent(row.dispute_id)}`, { cache: "no-store" });
+      const body = resp.ok ? await resp.json() : null;
+      const first = body && body.decision && body.decision.reasoning && body.decision.reasoning[0];
+      const text = first ? first.point : "";
+      reasons.set(row.dispute_id, { key: d.created_at, text });
+      return text;
+    } catch {
+      return "";
+    }
+  }
+
+  function hideReason() { reasonFor = null; reasonLine.hidden = true; }
+
+  async function showReason(row, rowEl) {
+    if (!row || !rowEl) return hideReason();
+    reasonFor = row.dispute_id;
+    const text = await topReason(row);
+    if (reasonFor !== row.dispute_id) return;   // the pointer moved on while fetching
+    if (!text) return hideReason();
+    const top = rowEl.getBoundingClientRect().bottom - stage.getBoundingClientRect().top;
+    reasonLine.replaceChildren(el("span", { class: "row-reason-label", text: "Main reason" }), el("span", { class: "row-reason-text", text }));
+    reasonLine.style.top = `${top}px`;
+    reasonLine.hidden = false;
+  }
+
+  // The 5-second refresh re-renders rows: keep the line on the same dispute and move it with the row,
+  // or hide it if that row is no longer shown (filtered out, or gone).
+  function keepReason() {
+    if (!reasonFor || reasonLine.hidden) return;
+    const node = grid.getRowNode(reasonFor);
+    const rowEl = node && node.displayed && node.rowIndex !== null ? rowElementFor(node.rowIndex) : null;
+    if (!rowEl) return hideReason();
+    reasonLine.style.top = `${rowEl.getBoundingClientRect().bottom - stage.getBoundingClientRect().top}px`;
+  }
+
+  const rowElementFor = (rowIndex) =>
+    stage.querySelector(`.ag-center-cols-container .ag-row[row-index="${rowIndex}"]`);
+
+  const grid = agGrid.createGrid(gridEl, {
     columnDefs,
     rowData: null, // shows the loading overlay until the first response
     getRowId: (p) => p.data.dispute_id,
@@ -76,7 +131,18 @@
     doesExternalFilterPass: (node) =>
       (!filters.reason || node.data.reason === filters.reason) &&
       (!filters.status || node.data.status === filters.status),
-    onModelUpdated: () => updateCount(),
+    onModelUpdated: () => { updateCount(); keepReason(); },
+    onCellMouseOver: (e) => {
+      clearTimeout(hoverTimer);
+      const rowEl = e.event && e.event.target && e.event.target.closest(".ag-row");
+      hoverTimer = setTimeout(() => showReason(e.data, rowEl), 120);
+    },
+    onCellFocused: (e) => {
+      if (e.rowIndex === null || e.rowIndex === undefined) return hideReason();
+      const node = grid.getDisplayedRowAtIndex(e.rowIndex);
+      showReason(node && node.data, rowElementFor(e.rowIndex));
+    },
+    onBodyScroll: () => hideReason(),
   });
 
   function updateCount() {
@@ -139,6 +205,8 @@
       if (!loaded) grid.setGridOption("rowData", []);
     }
   }
+
+  stage.addEventListener("mouseleave", () => { clearTimeout(hoverTimer); hideReason(); });
 
   document.getElementById("search").addEventListener("input", (e) => grid.setGridOption("quickFilterText", e.target.value));
   for (const key of ["reason", "status"]) {
