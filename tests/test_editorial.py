@@ -143,3 +143,18 @@ def test_queue_grid_columns_untouched_and_rows_not_transformed():
     queue = (WEB / "static" / "queue.js").read_text(encoding="utf-8")
     assert queue.count("headerName:") == 8
     assert ".ag-row" not in CSS.split("editorial pass, phase 1")[1].replace(".ag-row-hover", "")  # no new row rules
+
+
+# --- phase 4: accessibility fixes -------------------------------------------------------------
+
+def test_ticker_has_a_keyboard_pause_control():
+    assert 'class: "ticker-toggle", type: "button", "aria-pressed": "false", text: "Pause"' in OVERVIEW
+    assert ".ticker.is-paused .ticker-track { animation-play-state: paused; }" in CSS
+    reduced = "".join(CSS.split("@media (prefers-reduced-motion: reduce)")[1:])
+    assert ".ticker-toggle { display: none; }" in reduced
+
+
+def test_case_cards_have_a_clean_accessible_name():
+    card = between(OVERVIEW, "function caseCard(d)", "function render(rows")
+    assert '"aria-label": `${label}.`' in card and "Main reason: ${text}" in card
+    assert "no recommendation yet" in card

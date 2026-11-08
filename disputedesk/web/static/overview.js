@@ -85,8 +85,17 @@
     const group = (hidden) => el("div", { class: "ticker-group", "aria-hidden": hidden ? "true" : null },
       ...items.map((parts) => el("span", { class: "ticker-item" }, ...parts.map((p) => (typeof p === "string" ? p : p.cloneNode(true))))));
     // Two identical groups make the loop seamless; the copy is hidden from screen readers.
-    return el("section", { class: "ticker", "aria-label": "Figures for disputes waiting for your response" },
+    // A Pause/Play button stops the motion from the keyboard (hover also pauses it).
+    const section = el("section", { class: "ticker", "aria-label": "Figures for disputes waiting for your response" },
       el("div", { class: "ticker-track" }, group(false), group(true)));
+    const toggle = el("button", { class: "ticker-toggle", type: "button", "aria-pressed": "false", text: "Pause" });
+    toggle.addEventListener("click", () => {
+      const paused = section.classList.toggle("is-paused");
+      toggle.setAttribute("aria-pressed", String(paused));
+      toggle.textContent = paused ? "Play" : "Pause";
+    });
+    section.append(toggle);
+    return section;
   }
 
   // A case card: the verdict as a huge word and the risk score as a large number. On hover or keyboard
@@ -105,7 +114,11 @@
         el("span", { class: "num", text: DD.money(d.amount) }),
         el("span", { class: `badge ${DD.statusClass(d.status)}`, text: DD.statusLabel(d.status) })),
       el("div", { class: "card-due" }, DD.countdownNode(d.seller_response_due_date)));
-    const card = el("a", { class: `case-card${decided ? " has-reason" : ""}`, href },
+    const due = d.seller_response_due_date ? `due ${DD.dueDate(d.seller_response_due_date).split(",")[0]}` : "under PayPal review";
+    const label = decided
+      ? `${d.dispute_id}: ${d.decision.decision.toLowerCase()}, risk ${d.decision.risk_score}, ${due}`
+      : `${d.dispute_id}: no recommendation yet, ${due}`;
+    const card = el("a", { class: `case-card${decided ? " has-reason" : ""}`, href, "aria-label": `${label}.` },
       el("h3", { class: "card-id num", text: d.dispute_id }),
       DD.caseCaption(d),
       el("div", { class: "card-stage" }, summary));
@@ -115,7 +128,10 @@
         el("p", { class: "card-reason", text: "Loading the main reason." }));
       card.querySelector(".card-stage").append(back);
       DD.topReason(d).then((text) => {
-        if (text) back.querySelector(".card-reason").textContent = text;
+        if (text) {
+          back.querySelector(".card-reason").textContent = text;
+          card.setAttribute("aria-label", `${label}. Main reason: ${text}`);
+        }
         else { back.remove(); card.classList.remove("has-reason"); }  // no stored reason: nothing to swap to
       });
     }
