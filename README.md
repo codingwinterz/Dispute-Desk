@@ -25,7 +25,7 @@ their own sandbox keys; nothing in this repository is a live credential.
 ```sh
 copy .env.example .env                                # fill in the four values (cp on macOS/Linux)
 docker compose up -d falkordb                         # graph database on 127.0.0.1:6379
-.venv\Scripts\python scripts/seed_graph.py            # merchant context (after the first disputes arrive)
+.venv\Scripts\python scripts/import_merchant_records.py --file seed/merchant_data.json   # after the first disputes arrive
 .venv\Scripts\python scripts/start.py                 # checks the setup, then starts the app
 ```
 
@@ -53,7 +53,7 @@ picks them up within `POLL_SECONDS`.
 | PayPal disputes (details, stage, status, offers, evidence, sandbox settlement) | **Real**: PayPal sandbox REST API (`https://api-m.sandbox.paypal.com`) |
 | PayPal webhooks (`CUSTOMER.DISPUTE.*`) | **Real**: delivered by the PayPal sandbox and verified with PayPal's verify-webhook-signature API |
 | Customers, transactions, disputes in the graph | **Real** (`source="paypal"`): built from the stored dispute JSON |
-| Shipments, IP / device telemetry, past disputes (`SEED-…`) | **Seeded** (`source="seeded"`): merchant-supplied test data in `seed/merchant_data.json`, not from PayPal |
+| Shipments, IP / device telemetry, past disputes (`SEED-…`) | **Seeded** (`source="seeded"`): merchant records imported from an input JSON file (the sandbox example is `seed/merchant_data.json`), not from PayPal. In production your store supplies this; in the sandbox it is simulated. |
 | Decisions (DEFEND / ACCEPT) | **Generated** by the LLM from the graph facts and policy rules above |
 
 Sandbox only. There are no live credentials and no live base URL anywhere in this code.
@@ -147,6 +147,11 @@ by FastAPI, AG Grid Community from a CDN).
   edited, approved, PayPal's answer), built from the existing read-only API.
 - **Insights** (`/insights`): recommendation split, risk-score bands, disputes by reason and open
   disputes by deadline, all counted from the local store.
+- **Merchant records** (`/merchant-records`): the shipments and checkout devices behind each disputed
+  transaction and earlier disputes on file, each with its source tag. Import them from a JSON file with
+  `scripts/import_merchant_records.py --file <file>`: it validates the file (one line per problem),
+  takes real transaction IDs from the stored PayPal disputes, stores the records for this page and seeds
+  the graph from the same file (`--no-graph` to skip). A new import replaces the previous one.
 - **Queue** (`/`): every stored dispute with a live countdown to the seller response deadline (red
   under 72 hours), status, recommended action, risk score and source. Search, reason and status
   filters; refreshes every 5 seconds and flashes cells that changed.
