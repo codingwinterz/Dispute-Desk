@@ -19,6 +19,11 @@
   --r-md: 8px;
   --gutter: 24px;
   --font: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Display face for headlines and big numbers. Loaded with display=optional: if it isn't ready in the
+     browser's short block period, these fallbacks stay for the page's lifetime (no late swap, no shift). */
+  --font-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", "Liberation Sans Narrow", Impact, sans-serif;
+  /* Faint grain on the page ground only (opaque panels cover it). Opacity is fixed at 0.035 in the SVG. */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
   color-scheme: dark;
 }
 
@@ -27,7 +32,8 @@
 html, body { margin: 0; }
 
 body {
-  background: var(--ink);
+  background: var(--ink) var(--grain) repeat;
+  background-size: 180px 180px;
   color: var(--text);
   font-family: var(--font);
   font-size: 15px;
@@ -63,8 +69,12 @@ body.shell > main { grid-area: main; width: 100%; }
 }
 .sidebar .brand {
   display: flex; align-items: center; gap: 10px; padding: 0 10px;
-  color: var(--text); text-decoration: none; font-weight: 700; font-size: 17px; letter-spacing: -0.01em;
+  color: var(--text); text-decoration: none; font-family: var(--font-display); font-weight: 900;
+  font-size: 24px; letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap; min-width: 0;
 }
+/* The fallback faces are wider than the display face: keep the brand inside the sidebar either way. */
+.sidebar { overflow-x: hidden; }
+.sidebar .brand { font-size: clamp(18px, 1.6vw, 24px); }
 .sidebar .brand .tab, .site-tab {
   width: 18px; height: 14px; background: var(--accent);
   border-radius: 3px 3px 0 0; clip-path: polygon(0 30%, 40% 30%, 52% 0, 100% 0, 100% 100%, 0 100%);
@@ -104,7 +114,7 @@ body.shell > main { grid-area: main; width: 100%; }
   from { transform: translateX(-4%); }
   to { transform: translateX(4%); }
 }
-.topbar-title { font-weight: 700; font-size: 15px; color: var(--text); }
+.topbar-title { font-family: var(--font-display); font-weight: 800; font-size: 20px; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text); }
 .topbar-status { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
 .env {
   font-size: 12px; font-weight: 700; padding: 5px 9px; border-radius: 999px;
@@ -138,7 +148,10 @@ body.shell > main { grid-area: main; width: 100%; }
 main { padding: 36px var(--gutter) 64px; max-width: 1400px; margin: 0 auto; }
 main:focus { outline: none; }
 
-h1 { font-size: 36px; line-height: 1.08; font-weight: 700; letter-spacing: -0.025em; margin: 0 0 10px; }
+h1 {
+  font-family: var(--font-display); font-weight: 800; text-transform: uppercase;
+  font-size: clamp(44px, 5.2vw, 72px); line-height: 0.92; letter-spacing: 0.005em; margin: 0 0 14px;
+}
 h2 { font-size: 17px; line-height: 1.3; font-weight: 700; margin: 0 0 12px; }
 .lede { color: var(--muted); margin: 0 0 4px; max-width: 72ch; font-size: 16px; }
 
@@ -573,7 +586,7 @@ button:disabled { cursor: not-allowed; }
 #grid.ag-theme-quartz-dark { --ag-input-focus-border-color: var(--focus); --ag-range-selection-border-color: var(--focus); }
 
 /* the case header's dispute ID is the page title */
-.case-head h1 { font-size: 40px; }
+.case-head h1 { font-size: clamp(40px, 4.6vw, 64px); }
 .case-head { margin-bottom: 4px; }
 
 /* queue: main reason under the hovered or focused row (an overlay; AG Grid rows are untouched) */
@@ -611,7 +624,81 @@ button:disabled { cursor: not-allowed; }
 .tl-time { color: var(--muted); font-size: 13px; white-space: nowrap; }
 
 @media (max-width: 900px) {
-  h1 { font-size: 30px; }
-  .case-head h1 { font-size: 30px; }
+  h1 { font-size: 40px; }
   .verdict-band { grid-template-columns: 1fr; }
+}
+
+/* ---- editorial pass, phase 1: captions, hero, ticker, stacked headers, reveals ---------- */
+
+/* Caption metadata: small caps under figures and cards. */
+.cap { font-size: 12px; font-variant-caps: all-small-caps; letter-spacing: 0.06em; color: var(--muted); }
+.cap .sep { color: var(--accent); padding: 0 0.35em; }
+
+/* Overview hero: giant stacked lines built from real data. */
+.hero-board { position: relative; padding: 4px 0 22px; }
+.hero-line {
+  display: block; font-family: var(--font-display); font-weight: 900; text-transform: uppercase;
+  font-size: clamp(64px, 11.5vw, 188px); line-height: 0.86; letter-spacing: 0;
+  padding-bottom: 0.04em; overflow: hidden;   /* words rise from below the line on load */
+  transform: translate3d(calc(var(--px, 0) * var(--depth, 0px)), calc(var(--py, 0) * var(--depth, 0px)), 0);
+  transition: transform 0.25s ease-out;
+}
+.hero-line:nth-child(1) { --depth: 10px; }
+.hero-line:nth-child(2) { --depth: 18px; }
+.hero-line .hl { color: var(--accent); }
+.hero-line .hl.urgent { color: var(--urgent); }
+.hero-line .word { display: inline-block; }
+.dg { display: inline-block; width: 0.56em; text-align: center; }  /* fixed-width digits: no jitter, no shift */
+.hero-board .cap { display: block; margin-top: 14px; font-size: 13px; }
+.hero-board.is-loading .hero-line { color: var(--rule); }
+
+.rise .word { animation: word-rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 70ms); }
+@keyframes word-rise { from { transform: translateY(0.75em); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* Ticker: real figures only, CSS transform, pauses on hover and when the tab is hidden. */
+.ticker {
+  position: relative; overflow: hidden; margin: 6px 0 40px; padding: 12px 0;
+  border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+.ticker-track { display: flex; width: max-content; animation: ticker-run 48s linear infinite; }
+.ticker:hover .ticker-track, .ticker:focus-within .ticker-track { animation-play-state: paused; }
+.ticker-group { display: flex; flex: none; }
+.ticker-item {
+  display: inline-block; padding: 0 28px; white-space: nowrap;   /* inline, so the spaces in the copy are kept */
+  font-family: var(--font-display); font-weight: 800; font-size: 24px; letter-spacing: 0.03em; text-transform: uppercase;
+}
+.ticker-item::before { content: ""; display: inline-block; width: 8px; height: 8px; background: var(--accent); transform: rotate(45deg); margin-right: 18px; vertical-align: 0.2em; }
+.ticker-item .hl { color: var(--accent); }
+@keyframes ticker-run { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-50%, 0, 0); } }
+
+/* Stacked editorial section headers with a one-line caption. */
+.stack-head { margin: 0 0 18px; }
+.stack-head h2 {
+  font-family: var(--font-display); font-weight: 900; text-transform: uppercase; margin: 0;
+  font-size: clamp(40px, 5.6vw, 84px); line-height: 0.88; letter-spacing: 0.005em;
+}
+.stack-head h2 span { display: block; }
+.stack-head h2 span + span { color: var(--muted); }
+.stack-head .cap { display: block; margin-top: 10px; font-size: 13px; }
+
+/* Scroll reveal (only applied by JS when motion is allowed). */
+.reveal-pending { opacity: 0; transform: translateY(28px); }
+.is-revealed { transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1); }
+
+/* Nothing animates while the tab is hidden. */
+html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-play-state: paused !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rise .word, .ticker-track { animation: none !important; }
+  .ticker-track, .ticker-group { flex-wrap: wrap; width: auto; row-gap: 8px; }
+  .ticker-group { flex: 1 1 100%; }  /* allowed to shrink, so its items wrap */
+  .ticker-group[aria-hidden="true"] { display: none; }
+  .ticker { -webkit-mask-image: none; mask-image: none; }
+  .hero-line { transform: none !important; transition: none; }
+  .reveal-pending { opacity: 1; transform: none; }
+}
+@media (max-width: 900px) {
+  .ticker-item { font-size: 20px; padding: 0 18px; }
 }
