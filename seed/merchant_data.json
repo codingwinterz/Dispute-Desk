@@ -74,6 +74,44 @@
         "device_hash": "dev-4b8d02",
         "geo": "Portland, OR, US"
       }
+    },
+    "PP-R-CTG-10197156": {
+      "scenario": "Not as described, small amount. Delivered, but nobody signed; the checkout device is not shared with any other dispute. Times are minutes apart because the sandbox transaction was created minutes before the import.",
+      "shipment": {
+        "id": "SEED-SHP-CTG",
+        "carrier": "USPS",
+        "tracking_id": "9400SEED00000005",
+        "status": "DELIVERED",
+        "shipped_at": "2026-11-08T17:09:00Z",
+        "delivered_at": "2026-11-08T17:16:00Z",
+        "signed_by_buyer": false,
+        "destination": "Columbus, OH, US"
+      },
+      "telemetry": {
+        "id": "SEED-TEL-CTG",
+        "ip": "198.51.100.61",
+        "device_hash": "dev-6d2e18",
+        "geo": "Columbus, OH, US"
+      }
+    },
+    "PP-R-WZR-10197157": {
+      "scenario": "Not received, but the carrier confirms a signed delivery; the checkout device is not shared with any other dispute. Times are minutes apart because the sandbox transaction was created minutes before the import.",
+      "shipment": {
+        "id": "SEED-SHP-WZR",
+        "carrier": "UPS",
+        "tracking_id": "1ZSEED0000000006",
+        "status": "DELIVERED",
+        "shipped_at": "2026-11-08T17:10:00Z",
+        "delivered_at": "2026-11-08T17:18:00Z",
+        "signed_by_buyer": true,
+        "destination": "Phoenix, AZ, US"
+      },
+      "telemetry": {
+        "id": "SEED-TEL-WZR",
+        "ip": "203.0.113.140",
+        "device_hash": "dev-b37a40",
+        "geo": "Phoenix, AZ, US"
+      }
     }
   },
   "past_disputes": [
