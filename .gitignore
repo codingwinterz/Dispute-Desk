@@ -7,5 +7,6 @@ __pycache__/
 logs/
 .pytest_cache/
 *.sqlite3
-data/
+data/*
+!data/demo_snapshot.json
 *.db
