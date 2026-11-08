@@ -37,6 +37,7 @@ from disputedesk.decision_store import DecisionStore
 from disputedesk.demo import DEMO_MESSAGE, SNAPSHOT_PATH, load_snapshot, read_snapshot
 from disputedesk.dispute_store import DisputeStore, safe_filename
 from disputedesk.drafts import DraftError, DraftStore, effective_draft
+from disputedesk.merchant_records import MerchantRecordStore, records_view
 from disputedesk.disputes import DisputesClient
 from disputedesk.events import DisputeDetected, EventBus
 from disputedesk.graph import GraphStore, connect, context_to_facts
@@ -51,7 +52,7 @@ WEBHOOK_PATH = "/webhooks/paypal"  # the only route reachable through the ngrok 
 WEB_DIR = Path(__file__).resolve().parent / "web"  # dashboard HTML, CSS and JS (no build step)
 # Dashboard pages: path -> HTML file. Each page reads only the existing read-only API.
 PAGES = {"/": "queue.html", "/overview": "overview.html", "/activity": "activity.html",
-         "/insights": "insights.html", "/policies": "policies.html"}
+         "/insights": "insights.html", "/merchant-records": "merchant_records.html", "/policies": "policies.html"}
 
 # Header -> verify-webhook-signature body field.
 # https://developer.paypal.com/api/webhooks/v1/#verify-webhook-signature_post
@@ -164,6 +165,7 @@ def create_app(
     demo_info: dict[str, Any] = {"demo": False}
     demo_dir: Path | None = None
     demo_stores: list[Any] = []  # closed at shutdown before the temporary folder is removed
+    merchant_store: MerchantRecordStore | None = None
     if demo:
         snapshot = read_snapshot(Path(os.getenv("DEMO_SNAPSHOT") or SNAPSHOT_PATH))
         demo_dir = Path(tempfile.mkdtemp(prefix="disputedesk-demo-"))
@@ -172,8 +174,9 @@ def create_app(
         policy_store = PolicyStore(dispute_store.path)
         draft_store = DraftStore(dispute_store.path)
         submissions = SubmissionStore(dispute_store.path)  # creates its tables before loading
+        merchant_store = MerchantRecordStore(dispute_store.path)
         load_snapshot(snapshot, dispute_store.path)
-        demo_stores = [dispute_store, decision_store, policy_store, draft_store, submissions]
+        demo_stores = [dispute_store, decision_store, policy_store, draft_store, submissions, merchant_store]
         submitter = Submitter(dispute_store, decision_store, draft_store, submissions, client=None)
         store = EventStore(demo_dir / "logs")
         verifier = verifier or _DemoVerifier()  # never called: the middleware refuses every write
@@ -195,6 +198,8 @@ def create_app(
     dispute_store = dispute_store or DisputeStore(DISPUTE_DB)
     # Decisions live in the same SQLite file as the disputes.
     decision_store = decision_store or DecisionStore(dispute_store.path)
+    # Read-only here (scripts import the records). Demo mode already opened one on its temporary file.
+    merchant_store = merchant_store or MerchantRecordStore(dispute_store.path)
     policy_store = policy_store or PolicyStore(dispute_store.path)
     draft_store = draft_store or DraftStore(dispute_store.path)
     bus = bus or EventBus()
@@ -293,6 +298,13 @@ def create_app(
     @app.get("/api/disputes")
     async def stored_disputes() -> JSONResponse:
         return JSONResponse({"disputes": await run_in_threadpool(_queue_rows)})
+
+    @app.get("/api/merchant-records")
+    async def merchant_records() -> JSONResponse:
+        """Shipments, devices and earlier disputes from the merchant's records (seeded in the sandbox)."""
+        rows = await run_in_threadpool(merchant_store.rows)
+        disputes = await run_in_threadpool(dispute_store.full_disputes)
+        return JSONResponse(records_view(rows, disputes))
 
     @app.get("/api/decisions/{dispute_id}")
     async def dispute_decision(dispute_id: str) -> JSONResponse:

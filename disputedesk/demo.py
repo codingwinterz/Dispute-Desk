@@ -115,6 +115,7 @@ def export_snapshot(db_path: Path) -> tuple[dict[str, Any], dict[str, str]]:
         submissions = [_json_cols(r, ("paypal_error",)) for r in _rows(db, "submissions")]
         verified = _rows(db, "verified_behaviours")
         policy = _rows(db, "policy_settings")
+        merchant = [_json_cols(r, ("data",)) for r in _rows(db, "merchant_records")]
     finally:
         db.close()
     snapshot = {
@@ -128,6 +129,7 @@ def export_snapshot(db_path: Path) -> tuple[dict[str, Any], dict[str, str]]:
         "submissions": submissions,
         "verified_behaviours": verified,
         "policy_settings": json.loads(policy[0]["data"]) if policy else None,
+        "merchant_records": merchant,
     }
     return _replace(snapshot, mapping), mapping
 
@@ -172,6 +174,11 @@ def load_snapshot(snapshot: dict[str, Any], db_path: Path) -> None:
               r.get("finished_at"), r.get("http_status"), dump(r.get("paypal_error"))) for r in snapshot["submissions"]])
         db.executemany("INSERT INTO verified_behaviours (key, verified_at, dispute_id) VALUES (?, ?, ?)",
                        [(r["key"], r["verified_at"], r["dispute_id"]) for r in snapshot["verified_behaviours"]])
+        db.executemany(
+            "INSERT INTO merchant_records (record_id, kind, dispute_id, transaction_id, data, source, imported_at,"
+            " input_file) VALUES (?,?,?,?,?,?,?,?)",
+            [(r["record_id"], r["kind"], r.get("dispute_id"), r.get("transaction_id"), json.dumps(r["data"]),
+              r["source"], r["imported_at"], r["input_file"]) for r in snapshot.get("merchant_records", [])])
         if snapshot.get("policy_settings") is not None:
             db.execute("INSERT INTO policy_settings (id, data, updated_at) VALUES (1, ?, ?)",
                        (json.dumps(snapshot["policy_settings"]), snapshot["recorded_at"]))

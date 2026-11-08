@@ -530,3 +530,31 @@ button.secondary.small { font-size: 13px; padding: 6px 10px; }
   color: var(--accent-ink); background: var(--accent);
   box-shadow: 0 0 12px -3px rgba(226, 184, 92, 0.6);
 }
+
+/* ---- merchant records ----------------------------------------------------------------- */
+
+#note { margin-top: 14px; max-width: 70ch; }
+.rec-folder {
+  margin-top: 22px; padding: 18px 20px; background: var(--panel); border: 1px solid var(--rule);
+  border-radius: var(--r-md); box-shadow: 0 16px 36px -22px rgba(0, 0, 0, 0.8);
+}
+.rec-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 14px; }
+.rec-title a { font-weight: 700; font-size: 16px; }
+.rec-txn { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.rec-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.rec-block { background: var(--ink); border: 1px solid var(--rule); border-radius: var(--r-sm); padding: 14px 16px; }
+.rec-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.rec-head h3 { margin: 0; font-size: 14px; }
+.rec-fields { margin: 0; display: grid; gap: 4px; }
+.rec-field { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px; font-size: 14px; }
+.rec-field dt { color: var(--muted); }
+.rec-field dd { margin: 0; overflow-wrap: anywhere; }
+.rec-past { margin-top: 34px; }
+.rec-past-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.rec-past-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 14px;
+  border: 1px solid var(--rule); border-radius: var(--r-sm); background: var(--panel); }
+.rec-past-id { font-weight: 700; }
+@media (max-width: 900px) {
+  .rec-grid { grid-template-columns: 1fr; }
+  .rec-txn { margin-left: 0; }
+}

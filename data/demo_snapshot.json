@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "recorded_at": "2026-11-08T00:09:34.519561+00:00",
+  "recorded_at": "2026-11-08T00:31:56.335038+00:00",
   "about": "Recorded PayPal sandbox disputes and DisputeDesk's decisions, for demo mode. Buyer and merchant identifiers are pseudonymised; shipments, devices and past disputes are seeded test data.",
   "disputes": [
     {
@@ -201,6 +201,10 @@
         },
         "links": [
           {
+            "rel": "self",
+            "method": "GET"
+          },
+          {
             "rel": "accept_claim",
             "method": "POST"
           },
@@ -209,16 +213,12 @@
             "method": "POST"
           },
           {
-            "rel": "provide_supporting_info",
-            "method": "POST"
-          },
-          {
             "rel": "require_evidence",
             "method": "POST"
           },
           {
-            "rel": "self",
-            "method": "GET"
+            "rel": "provide_supporting_info",
+            "method": "POST"
           }
         ],
         "disputed_transactions": [
@@ -852,5 +852,216 @@
       "dispute_id": "PP-R-JTQ-10195324"
     }
   ],
-  "policy_settings": null
+  "policy_settings": null,
+  "merchant_records": [
+    {
+      "record_id": "SEED-SHP-JTQ",
+      "kind": "shipment",
+      "dispute_id": "PP-R-JTQ-10195324",
+      "transaction_id": "05P417886B568010H",
+      "data": {
+        "id": "SEED-SHP-JTQ",
+        "carrier": "UPS",
+        "tracking_id": "1ZSEED0000000001",
+        "status": "DELIVERED",
+        "destination": "Austin, TX, US",
+        "shipped_at": "2026-10-31",
+        "delivered_at": "2026-11-03",
+        "signed_by_buyer": true
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "input_file": "merchant_data.json"
+    },
+    {
+      "record_id": "SEED-TEL-JTQ",
+      "kind": "telemetry",
+      "dispute_id": "PP-R-JTQ-10195324",
+      "transaction_id": "05P417886B568010H",
+      "data": {
+        "id": "SEED-TEL-JTQ",
+        "ip": "203.0.113.24",
+        "device_hash": "dev-7f3a91",
+        "geo": "Austin, TX, US"
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "input_file": "merchant_data.json"
+    },
+    {
+      "record_id": "SEED-SHP-YOV",
+      "kind": "shipment",
+      "dispute_id": "PP-R-YOV-10196864",
+      "transaction_id": "5GU29781PX414531M",
+      "data": {
+        "id": "SEED-SHP-YOV",
+        "carrier": "USPS",
+        "tracking_id": "9400SEED00000002",
+        "status": "LABEL_CREATED",
+        "destination": "Denver, CO, US",
+        "last_scan": "Label created 2026-11-06; no carrier scan since"
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "input_file": "merchant_data.json"
+    },
+    {
+      "record_id": "SEED-TEL-YOV",
+      "kind": "telemetry",
+      "dispute_id": "PP-R-YOV-10196864",
+      "transaction_id": "5GU29781PX414531M",
+      "data": {
+        "id": "SEED-TEL-YOV",
+        "ip": "198.51.100.7",
+        "device_hash": "dev-21c4be",
+        "geo": "Denver, CO, US"
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "input_file": "merchant_data.json"
+    },
+    {
+      "record_id": "SEED-SHP-QQW",
+      "kind": "shipment",
+      "dispute_id": "PP-R-QQW-10196399",
+      "transaction_id": "5DR64938XB7782324",
+      "data": {
+        "id": "SEED-SHP-QQW",
+        "carrier": "FedEx",
+        "tracking_id": "7700SEED00000003",
+        "status": "DELIVERED",
+        "destination": "Miami, FL, US",
+        "shipped_at": "2026-11-05",
+        "delivered_at": "2026-11-06",
+        "signed_by_buyer": true
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "input_file": "merchant_data.json"
+    },
+    {
+      "record_id": "SEED-TEL-QQW",
+      "kind": "telemetry",
+      "dispute_id": "PP-R-QQW-10196399",
+      "transaction_id": "5DR64938XB7782324",
+      "data": {
+        "id": "SEED-TEL-QQW",
+        "ip": "203.0.113.88",
+        "device_hash": "dev-9e0d55",
+        "geo": "Miami, FL, US"
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "input_file": "merchant_data.json"
+    },
+    {
+      "record_id": "SEED-SHP-IQA",
+      "kind": "shipment",
+      "dispute_id": "PP-R-IQA-10196863",
+      "transaction_id": "5CB61217MH916652B",
+      "data": {
+        "id": "SEED-SHP-IQA",
+        "carrier": "USPS",
+        "tracking_id": "9400SEED00000004",
+        "status": "DELIVERED",
+        "destination": "Portland, OR, US",
+        "shipped_at": "2026-11-06",
+        "delivered_at": "2026-11-07",
+        "signed_by_buyer": false
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "input_file": "merchant_data.json"
+    },
+    {
+      "record_id": "SEED-TEL-IQA",
+      "kind": "telemetry",
+      "dispute_id": "PP-R-IQA-10196863",
+      "transaction_id": "5CB61217MH916652B",
+      "data": {
+        "id": "SEED-TEL-IQA",
+        "ip": "198.51.100.150",
+        "device_hash": "dev-4b8d02",
+        "geo": "Portland, OR, US"
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "input_file": "merchant_data.json"
+    },
+    {
+      "record_id": "SEED-D-0001",
+      "kind": "past_dispute",
+      "dispute_id": "SEED-D-0001",
+      "transaction_id": "SEED-T-0001",
+      "data": {
+        "dispute_id": "SEED-D-0001",
+        "transaction_id": "SEED-T-0001",
+        "payer_id": "SEED-BUYER-A",
+        "reason": "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+        "status": "RESOLVED",
+        "amount": 85.0,
+        "currency": "USD",
+        "create_time": "2026-08-14T16:20:00Z",
+        "telemetry": {
+          "id": "SEED-TEL-0001",
+          "ip": "198.51.100.41",
+          "device_hash": "dev-9e0d55",
+          "geo": "Miami, FL, US"
+        }
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "input_file": "merchant_data.json"
+    },
+    {
+      "record_id": "SEED-D-0002",
+      "kind": "past_dispute",
+      "dispute_id": "SEED-D-0002",
+      "transaction_id": "SEED-T-0002",
+      "data": {
+        "dispute_id": "SEED-D-0002",
+        "transaction_id": "SEED-T-0002",
+        "payer_id": "SEED-BUYER-B",
+        "reason": "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+        "status": "RESOLVED",
+        "amount": 120.0,
+        "currency": "USD",
+        "create_time": "2026-09-22T11:05:00Z",
+        "telemetry": {
+          "id": "SEED-TEL-0002",
+          "ip": "198.51.100.42",
+          "device_hash": "dev-9e0d55",
+          "geo": "Miami, FL, US"
+        }
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "input_file": "merchant_data.json"
+    },
+    {
+      "record_id": "SEED-D-0003",
+      "kind": "past_dispute",
+      "dispute_id": "SEED-D-0003",
+      "transaction_id": "SEED-T-0003",
+      "data": {
+        "dispute_id": "SEED-D-0003",
+        "transaction_id": "SEED-T-0003",
+        "payer_id": "SEED-BUYER-C",
+        "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+        "status": "RESOLVED",
+        "amount": 30.0,
+        "currency": "USD",
+        "create_time": "2026-07-03T09:40:00Z",
+        "telemetry": {
+          "id": "SEED-TEL-0003",
+          "ip": "198.51.100.200",
+          "device_hash": "dev-c0ffee",
+          "geo": "Seattle, WA, US"
+        }
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "input_file": "merchant_data.json"
+    }
+  ]
 }

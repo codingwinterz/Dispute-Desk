@@ -19,12 +19,13 @@ const DD = (() => {
 
   // ---- app shell: sidebar + top bar --------------------------------------------------
   // Pages whose data exists are links; the rest are listed as coming soon, never as dead links.
-  const PAGES = { overview: "Overview", queue: "Dispute queue", activity: "Activity", insights: "Insights", policies: "Dispute policies", case: "Case" };
+  const PAGES = { overview: "Overview", queue: "Dispute queue", activity: "Activity", insights: "Insights", records: "Merchant records", policies: "Dispute policies", case: "Case" };
   const COMING_SOON = ["Graph", "System"];
 
   function renderNav(current, title) {
     const links = [["overview", "/overview", "Overview"], ["queue", "/", "Queue"], ["activity", "/activity", "Activity"],
-                   ["insights", "/insights", "Insights"], ["policies", "/policies", "Policies"]];
+                   ["insights", "/insights", "Insights"], ["records", "/merchant-records", "Merchant records"],
+                   ["policies", "/policies", "Policies"]];
     const sidebar = el("aside", { class: "sidebar" },
       el("a", { class: "brand", href: "/" }, el("span", { class: "tab", "aria-hidden": "true" }), "DisputeDesk"),
       el("nav", { class: "side-links", "aria-label": "Main" }, ...links.map(([key, href, label]) =>
