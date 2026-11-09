@@ -4,8 +4,14 @@ export_snapshot() reads the local SQLite store and keeps only what the dashboard
 allowlist: dispute fields the pages use, link rel/method (no URLs), per-transaction IDs and amounts.
 Buyer and seller objects, messages, evidence documents and fund movements are never copied. Buyer and
 merchant identifiers are replaced by pseudonyms everywhere they appear (fact text, graph snapshot,
-reasoning, drafts). scan() then fails the export if an email, an original identifier or a token-like
-string is still present; it reports only which check failed, never the value.
+reasoning, drafts, the decision history). PayPal payer IDs are collected from the disputes and also
+from the decisions themselves (graph snapshot and "Buyer PayPal payer_id ..." fact text), so an ID
+that only survives in a stored decision is still replaced. Sandbox account names (sb-...) are removed.
+scan() then fails the export if an email or any "@", a sandbox account name, an original identifier or
+a token-like string is still present; it reports only which check failed, never the value.
+
+The decision history and the simulated merchant events are exported too, so demo mode shows the
+before-and-after verdict and the timeline exactly as recorded.
 
 load_snapshot() writes a snapshot into a fresh SQLite file so the existing stores and routes serve it.
 """
@@ -29,6 +35,13 @@ _TXN_FIELDS = ("seller_transaction_id", "buyer_transaction_id", "create_time", "
                "seller_protection_eligible", "seller_protection_type", "transaction_status")
 
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+# Sandbox test accounts are named sb-xxxx (their emails are sb-xxxx@personal.example.com and similar).
+SANDBOX_ACCOUNT = re.compile(r"\bsb-[A-Za-z0-9._%+-]*")
+# The customer fact written by graph.context_to_facts: "Buyer PayPal payer_id <ID>."
+PAYER_FACT = re.compile(r"payer_id\s+([A-Za-z0-9_-]+)")
+# Merchant-supplied test IDs (seed/merchant_data.json), labelled seeded: not PayPal identifiers.
+SEEDED_ID_PREFIX = "SEED-"
+_DECISION_JSON = ("reasoning", "facts", "graph_context", "rules")
 SECRET_PATTERNS = {
     "paypal_access_token": re.compile(r"A21AA[A-Za-z0-9_-]{20,}"),
     "bearer_token": re.compile(r"Bearer\s+(?!\[REDACTED\])[A-Za-z0-9._-]{12,}"),
@@ -46,8 +59,21 @@ def _allowlist_dispute(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _identifiers(disputes: list[dict[str, Any]]) -> dict[str, str]:
-    """Original buyer/merchant identifiers -> pseudonyms (stable within one export)."""
+def _decision_payer_ids(rec: dict[str, Any]) -> list[str]:
+    """PayPal payer IDs inside one stored decision: its graph snapshot and its fact text."""
+    found: list[str] = []
+    customer = (rec.get("graph_context") or {}).get("customer") or {}
+    if isinstance(customer, dict) and customer.get("payer_id"):
+        found.append(str(customer["payer_id"]))
+    for fact in rec.get("facts") or []:
+        if isinstance(fact, dict):
+            found += PAYER_FACT.findall(str(fact.get("text", "")))
+    return [p for p in found if not p.startswith(SEEDED_ID_PREFIX)]
+
+
+def _identifiers(disputes: list[dict[str, Any]], decisions: list[dict[str, Any]] = ()) -> dict[str, str]:
+    """Original buyer/merchant identifiers -> pseudonyms (stable within one export). `decisions` are
+    stored decision rows (current and archived) whose payer IDs are replaced too."""
     mapping: dict[str, str] = {}
     buyers: dict[str, str] = {}
     merchants: dict[str, str] = {}
@@ -72,6 +98,9 @@ def _identifiers(disputes: list[dict[str, Any]]) -> dict[str, str]:
                 mapping[n] = "Sandbox buyer"
             for n in names(seller):
                 mapping[n] = "Sandbox merchant"
+    for rec in decisions:
+        for payer_id in _decision_payer_ids(rec):
+            mapping[payer_id] = buyers.setdefault(payer_id, f"sandbox-buyer-{len(buyers) + 1}")
     return mapping
 
 
@@ -80,7 +109,7 @@ def _replace(value: Any, mapping: dict[str, str]) -> Any:
         for original in sorted(mapping, key=len, reverse=True):  # longest first: full names before parts
             if original and original in value:
                 value = value.replace(original, mapping[original])
-        return EMAIL.sub("[email removed]", value)
+        return SANDBOX_ACCOUNT.sub("[account removed]", EMAIL.sub("[email removed]", value))
     if isinstance(value, list):
         return [_replace(v, mapping) for v in value]
     if isinstance(value, dict):
@@ -106,11 +135,16 @@ def export_snapshot(db_path: Path) -> tuple[dict[str, Any], dict[str, str]]:
     try:
         raw_disputes = [(r["dispute_id"], r["source"], r["detected_at"], json.loads(r["data"]), r["full_fetched"])
                         for r in _rows(db, "disputes")]
-        mapping = _identifiers([d for _, _, _, d, _ in raw_disputes])
         disputes = [{"dispute_id": i, "source": "paypal", "detected_via": via, "detected_at": at,
                      "full_fetched": full, "data": _allowlist_dispute(data)}
                     for i, via, at, data, full in raw_disputes]
-        decisions = [_json_cols(r, ("reasoning", "facts", "graph_context", "rules")) for r in _rows(db, "decisions")]
+        decisions = [_json_cols(r, _DECISION_JSON) for r in _rows(db, "decisions")]
+        # Each archived row is the full decision it replaced (JSON), kept for the before/after view.
+        history = [{"dispute_id": r["dispute_id"], "archived_at": r["archived_at"], "replaced_by": r["replaced_by"],
+                    "record": _json_cols(json.loads(r["record"]), _DECISION_JSON)}
+                   for r in sorted(_rows(db, "decision_history"), key=lambda r: r["id"])]
+        events = [_json_cols(r, ("data",)) for r in _rows(db, "merchant_events")]
+        mapping = _identifiers([d for _, _, _, d, _ in raw_disputes], decisions + [h["record"] for h in history])
         drafts = _rows(db, "evidence_drafts")
         submissions = [_json_cols(r, ("paypal_error",)) for r in _rows(db, "submissions")]
         verified = _rows(db, "verified_behaviours")
@@ -125,6 +159,8 @@ def export_snapshot(db_path: Path) -> tuple[dict[str, Any], dict[str, str]]:
                   "identifiers are pseudonymised; shipments, devices and past disputes are seeded test data."),
         "disputes": disputes,
         "decisions": decisions,
+        "decision_history": history,
+        "merchant_events": events,
         "drafts": drafts,
         "submissions": submissions,
         "verified_behaviours": verified,
@@ -140,6 +176,10 @@ def scan(snapshot: dict[str, Any], originals: list[str]) -> list[str]:
     failed = []
     if EMAIL.search(text):
         failed.append("email_address")
+    if "@" in text:
+        failed.append("at_sign")
+    if "sb-" in text:
+        failed.append("sandbox_account")
     if any(o and o in text for o in originals):
         failed.append("original_identifier")
     failed += [name for name, pattern in SECRET_PATTERNS.items() if pattern.search(text)]
@@ -160,11 +200,22 @@ def load_snapshot(snapshot: dict[str, Any], db_path: Path) -> None:
              for d in snapshot["disputes"]])
         db.executemany(
             "INSERT INTO decisions (dispute_id, status, decision, risk_score, reasoning, evidence_summary, facts,"
-            " graph_context, model, attempts, error, created_at, rules) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " graph_context, model, attempts, error, created_at, rules, trigger) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [(r["dispute_id"], r["status"], r.get("decision"), r.get("risk_score"), dump(r.get("reasoning")),
               r.get("evidence_summary"), json.dumps(r.get("facts") or []), dump(r.get("graph_context")), r["model"],
-              r["attempts"], r.get("error"), r["created_at"], dump(r.get("rules")))
+              r["attempts"], r.get("error"), r["created_at"], dump(r.get("rules")), r.get("trigger"))
              for r in snapshot["decisions"]])
+        # Archived decisions keep the live format: the record's JSON columns are strings again.
+        db.executemany(
+            "INSERT INTO decision_history (dispute_id, archived_at, replaced_by, record) VALUES (?, ?, ?, ?)",
+            [(h["dispute_id"], h["archived_at"], h.get("replaced_by"),
+              json.dumps({k: (dump(v) if k in _DECISION_JSON else v) for k, v in h["record"].items()}))
+             for h in snapshot.get("decision_history", [])])
+        db.executemany(
+            "INSERT INTO merchant_events (event_id, dispute_id, transaction_id, data, source, label, received_at)"
+            " VALUES (?,?,?,?,?,?,?)",
+            [(e["event_id"], e["dispute_id"], e["transaction_id"], json.dumps(e["data"]), e["source"], e["label"],
+              e["received_at"]) for e in snapshot.get("merchant_events", [])])
         db.executemany("INSERT INTO evidence_drafts (dispute_id, text, updated_at) VALUES (?, ?, ?)",
                        [(r["dispute_id"], r["text"], r["updated_at"]) for r in snapshot["drafts"]])
         db.executemany(
