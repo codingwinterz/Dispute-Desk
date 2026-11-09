@@ -18,7 +18,7 @@ All queries use Cypher parameters; values are never formatted into query text.
 
 from typing import Any, Protocol
 
-from disputedesk.config import GRAPH_NAME, AgentSettings
+from disputedesk.config import AgentSettings
 
 PAYPAL = "paypal"
 SEEDED = "seeded"
@@ -36,7 +36,7 @@ class GraphLike(Protocol):
 def connect(settings: AgentSettings) -> GraphLike:
     from falkordb import FalkorDB  # imported here so tests never need a server
 
-    return FalkorDB(host=settings.falkordb_host, port=settings.falkordb_port).select_graph(GRAPH_NAME)
+    return FalkorDB(host=settings.falkordb_host, port=settings.falkordb_port).select_graph(settings.graph_name)
 
 
 def _amount(money: dict[str, Any] | None) -> tuple[float | None, str | None]:

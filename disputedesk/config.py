@@ -1,6 +1,7 @@
 """Settings loaded from .env (via python-dotenv). Sandbox only."""
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -24,6 +25,63 @@ DEFAULT_FALKORDB_HOST = "localhost"
 DEFAULT_FALKORDB_PORT = 6379
 GRAPH_NAME = "disputedesk"
 
+# Scratch mode: a copy of the store and its own graph, for rehearsing (scripts/scratch.py creates them).
+# Both must be set together, in the shell (never in .env), and neither may name the real store or graph.
+DB_ENV = "DISPUTEDESK_DB"
+GRAPH_ENV = "DISPUTEDESK_GRAPH"
+_GRAPH_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+@dataclass(frozen=True)
+class Targets:
+    db: Path
+    graph: str
+    scratch: bool
+
+
+def _same_path(a: Path, b: Path) -> bool:
+    return os.path.normcase(str(a.resolve())) == os.path.normcase(str(b.resolve()))
+
+
+def targets() -> Targets:
+    """The SQLite file and FalkorDB graph to use. Defaults to the real ones; scratch mode when both
+    DISPUTEDESK_DB and DISPUTEDESK_GRAPH are set. Raises (never falls back) on a half or unsafe setting."""
+    raw_db, raw_graph = (os.getenv(DB_ENV) or "").strip(), (os.getenv(GRAPH_ENV) or "").strip()
+    if not raw_db and not raw_graph:
+        return Targets(DISPUTE_DB, GRAPH_NAME, False)
+    if not (raw_db and raw_graph):
+        raise RuntimeError(f"scratch mode needs both {DB_ENV} and {GRAPH_ENV}, but only one is set. "
+                           "Fix: set both (python scripts/scratch.py create prints them) or unset both")
+    return Targets(check_scratch(Path(raw_db), raw_graph), raw_graph, True)
+
+
+def check_scratch(db: Path, graph: str) -> Path:
+    """The scratch database path (made absolute), or RuntimeError if it or the graph is the real one."""
+    if not db.is_absolute():
+        db = PROJECT_ROOT / db
+    if _same_path(db, DISPUTE_DB):
+        raise RuntimeError(f"{DB_ENV} names the real database; scratch mode must use a copy")
+    if graph == GRAPH_NAME:
+        raise RuntimeError(f"{GRAPH_ENV} names the real graph; scratch mode must use its own graph")
+    if not _GRAPH_NAME_RE.match(graph):
+        raise RuntimeError(f"{GRAPH_ENV} may only hold letters, digits, '_' and '-' (up to 64)")
+    return db
+
+
+def _load_env_file(path: Path) -> None:
+    """load_dotenv, refusing a .env that sets the scratch variables: they must come from the shell, so
+    the database (resolved before .env loads) and the graph (after) can never disagree."""
+    before = (os.getenv(DB_ENV), os.getenv(GRAPH_ENV))
+    load_dotenv(path)
+    if (os.getenv(DB_ENV), os.getenv(GRAPH_ENV)) != before:
+        for name, value in zip((DB_ENV, GRAPH_ENV), before):
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+        raise RuntimeError(f"{DB_ENV} and {GRAPH_ENV} can't be set in .env. "
+                           "Fix: remove them from .env and set them in the shell for a scratch session")
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -46,7 +104,7 @@ def load_settings(env_file: Path | None = None) -> Settings:
     if not path.exists() and not os.getenv("PAYPAL_CLIENT_ID"):
         raise RuntimeError("there is no .env file. Fix: copy .env.example .env and fill it in "
                            "(or run python scripts/demo.py for demo mode, which needs no .env)")
-    load_dotenv(path)
+    _load_env_file(path)
     missing = [
         name
         for name in ("PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_WEBHOOK_ID")
@@ -75,11 +133,12 @@ class AgentSettings:
     llm_model: str = DEFAULT_LLM_MODEL
     falkordb_host: str = DEFAULT_FALKORDB_HOST
     falkordb_port: int = DEFAULT_FALKORDB_PORT
+    graph_name: str = GRAPH_NAME
 
 
 def load_agent_settings(env_file: Path | None = None) -> AgentSettings:
     """LLM model and FalkorDB location. GEMINI_API_KEY is not read here: LiteLLM reads it itself."""
-    load_dotenv(env_file or PROJECT_ROOT / ".env")
+    _load_env_file(env_file or PROJECT_ROOT / ".env")
     try:
         port = int(os.getenv("FALKORDB_PORT") or DEFAULT_FALKORDB_PORT)
     except ValueError:
@@ -88,4 +147,5 @@ def load_agent_settings(env_file: Path | None = None) -> AgentSettings:
         llm_model=os.getenv("LLM_MODEL") or DEFAULT_LLM_MODEL,
         falkordb_host=os.getenv("FALKORDB_HOST") or DEFAULT_FALKORDB_HOST,
         falkordb_port=port,
+        graph_name=targets().graph,
     )
