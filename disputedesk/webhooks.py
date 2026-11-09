@@ -25,11 +25,12 @@ from typing import Any, Protocol
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from disputedesk.analyzer import Analyzer
+from disputedesk.attachments import SAFE_HEADERS, AttachmentError, AttachmentFetcher, buyer_documents, listing
 from disputedesk.auth import TokenProvider
 from disputedesk.config import LOG_DIR, Settings, load_agent_settings, load_settings, targets
 from disputedesk.decision import SANDBOX_NOTE
@@ -156,6 +157,7 @@ def create_app(
     policy_store: PolicyStore | None = None,
     draft_store: DraftStore | None = None,
     submitter: Submitter | None = None,
+    attachments: AttachmentFetcher | None = None,
     demo: bool | None = None,
 ) -> FastAPI:
     """Build the app. With no verifier, settings come from the environment and the real
@@ -236,6 +238,10 @@ def create_app(
                             rules_provider=policy_store.rules)
     if analyzer is not None:
         bus.subscribe(analyzer.on_event)
+    if attachments is None and settings is not None:
+        # Its own plain client: no request log, so the attachment link is never written to logs/*.jsonl.
+        attach_http = httpx.Client(timeout=30.0)
+        attachments = AttachmentFetcher(TokenProvider(settings, attach_http).auth_headers, attach_http)
     if submitter is None:
         submit_client = None
         if settings is not None:
@@ -361,7 +367,36 @@ def create_app(
         events = await run_in_threadpool(event_store.for_dispute, dispute_id)
         return JSONResponse({"dispute": dispute, "decision": _with_fact_refs(decision),
                              "draft": effective_draft(saved, decision), "submit": check,
-                             "history": history, "events": events})
+                             "history": history, "events": events,
+                             # Buyer attachments by index only (no names or links); none in demo mode.
+                             "attachments": [] if demo else await run_in_threadpool(_attachment_list, dispute_id)})
+
+    def _attachment_list(dispute_id: str) -> list[dict[str, Any]]:
+        return listing(dispute_store.get(dispute_id))
+
+    @app.get("/api/attachments/{dispute_id}/{index}")
+    async def buyer_attachment(dispute_id: str, index: int) -> Response:
+        """One buyer attachment as an image, fetched server-side. Never a URL or file name in or out."""
+        def refuse(code: str, status: int, message: str) -> JSONResponse:
+            return JSONResponse({"error": code, "message": message}, status_code=status, headers={"Cache-Control": "no-store"})
+        if demo:  # recorded data: no attachment is served and nothing is fetched
+            return refuse("demo_mode", 404, "Attachments are not shown in demo mode.")
+        data = await run_in_threadpool(dispute_store.get, dispute_id)
+        if data is None:
+            return refuse("unknown dispute", 404, "There is no such dispute in the local store.")
+        links = buyer_documents(data)
+        if not 0 <= index < len(links):
+            return refuse("no_attachment", 404, "This dispute has no buyer attachment at that index.")
+        if not links[index]:
+            return refuse("not_available", 404, "Buyer attachment, not available to download.")
+        if attachments is None:
+            return refuse("not_configured", 503, "Attachment download is not set up in this server.")
+        try:
+            body, content_type = await run_in_threadpool(attachments.fetch, links[index])
+        except AttachmentError as exc:
+            log.warning("attachment dispute=%s index=%d refused: %s", dispute_id, index, exc.code)
+            return refuse(exc.code, exc.http, exc.message)
+        return Response(content=body, media_type=content_type, headers=SAFE_HEADERS)
 
     # --- approved responses to PayPal (the only PayPal writes) ------------------------
 
