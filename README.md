@@ -1,6 +1,7 @@
 # DisputeDesk
 
 An AI agent that decides whether to defend or settle PayPal disputes.
+The agent recommends; nothing is sent to PayPal until the merchant approves.
 This branch (`sandbox-spike`) only proves that the real PayPal sandbox dispute flow works.
 
 ## Quick start: demo mode (no accounts, no keys)
@@ -15,7 +16,8 @@ py -3.12 -m venv .venv && .venv\Scripts\python -m pip install -r requirements.tx
 ```
 
 Then open http://127.0.0.1:8000/ (the Overview; the queue is at http://127.0.0.1:8000/queue). (macOS/Linux: `python3.12 -m venv .venv`, then `.venv/bin/python`.)
-The top bar shows **Demo data**. Buyer and merchant identifiers in the snapshot are pseudonymised.
+The top bar shows **Demo data**. The snapshot includes one simulated carrier event on the YOV dispute, labelled as a
+recorded, simulated merchant event. Buyer and account identifiers in the snapshot are anonymised placeholders.
 
 ## Full mode (your own PayPal sandbox)
 
@@ -55,6 +57,9 @@ picks them up within `POLL_SECONDS`.
 | Customers, transactions, disputes in the graph | **Real** (`source="paypal"`): built from the stored dispute JSON |
 | Shipments, IP / device telemetry, past disputes (`SEED-…`) | **Seeded** (`source="seeded"`): merchant records imported from an input JSON file (the sandbox example is `seed/merchant_data.json`), not from PayPal. In production your store supplies this; in the sandbox it is simulated. |
 | Decisions (DEFEND / ACCEPT) | **Generated** by the LLM from the graph facts and policy rules above |
+
+Buyer attachments appear in live mode only, and only where PayPal allows the download (in the sandbox this worked for
+inquiry-stage message attachments). They are never analysed by the agent.
 
 Sandbox only. There are no live credentials and no live base URL anywhere in this code.
 
