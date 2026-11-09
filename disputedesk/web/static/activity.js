@@ -56,8 +56,10 @@
   }
 
   function dayLabel(iso) {
-    const d = new Date(iso), today = new Date();
-    const y = new Date(); y.setDate(today.getDate() - 1);
+    // The shared clock: the real time live, the snapshot's recorded time in demo mode.
+    const now = DD.clock();
+    const d = new Date(iso), today = new Date(now);
+    const y = new Date(now); y.setDate(today.getDate() - 1);
     if (d.toDateString() === today.toDateString()) return "Today";
     if (d.toDateString() === y.toDateString()) return "Yesterday";
     return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
