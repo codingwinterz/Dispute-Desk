@@ -90,9 +90,6 @@ picks them up within `POLL_SECONDS`.
 | Buyer attachments | Live mode only, where PayPal provides a download link; never analysed by the agent |
 | Partial offers; reading attachment contents | Not built |
 
-Buyer attachments appear in live mode only, and only where PayPal allows the download (in the sandbox this worked for
-inquiry-stage message attachments). They are never analysed by the agent.
-
 Sandbox only. There are no live credentials and no live base URL anywhere in this code.
 
 ## Scripts
