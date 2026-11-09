@@ -539,6 +539,26 @@
           : ` Simulated merchant event. ${ev.note_production}`));
   }
 
+  // Buyer attachments: thumbnails served by GET /api/attachments/{id}/{index}. The page only knows
+  // indexes, never a file name or link. Display only: nothing here reaches the agent. Hidden when empty
+  // (and always empty in demo mode, so no request is made).
+  const ATTACHMENT_LABEL = "Buyer attachment. Not analysed by the agent.";
+  function attachmentsPanel(disputeId, items) {
+    if (!items || !items.length) return null;
+    const figure = (a) => {
+      if (!a.available) return el("li", { class: "attachment unavailable" }, el("span", { class: "hint", text: "Buyer attachment, not available to download" }));
+      const img = el("img", { src: `/api/attachments/${encodeURIComponent(disputeId)}/${a.index}`, alt: ATTACHMENT_LABEL,
+        loading: "lazy", decoding: "async", referrerpolicy: "no-referrer" });
+      const item = el("li", { class: "attachment" }, img, el("span", { class: "cap", text: ATTACHMENT_LABEL }));
+      img.addEventListener("error", () => img.replaceWith(el("span", { class: "hint", text: "Buyer attachment, could not be loaded from PayPal." })), { once: true });
+      return item;
+    };
+    return el("section", { class: "panel attachments", "aria-labelledby": "attachments-title" },
+      el("h2", { id: "attachments-title", text: "Buyer attachments" }),
+      el("p", { class: "hint", text: "Shown for you to look at. The agent's facts and recommendation do not include these." }),
+      el("ul", { class: "attachment-grid" }, ...items.map(figure)));
+  }
+
   function disposeGraph() {
     if (graph3d) { graph3d.dispose(); graph3d = null; }
   }
@@ -599,7 +619,7 @@
       panels[0].querySelector(".verdict-word").after(DDStamp.create(sent));  // between the verdict and the risk score
     }
     const band = el("div", { class: "verdict-band" }, panels[0], caseTimeline(dispute, decision, draft, submit));
-    const left = el("div", { class: "case-col" }, ...panels.slice(1));
+    const left = el("div", { class: "case-col" }, ...panels.slice(1), attachmentsPanel(dispute.dispute_id, body.attachments));
     const right = el("div", { class: "case-col" }, ...((decision && decision.status === "ok" && graphPanel(decision)) || [
       el("section", { class: "panel" }, el("h2", { text: "Evidence path" }),
         el("p", { class: "hint", text: "The graph path appears once the agent has a recommendation for this dispute." }))]));

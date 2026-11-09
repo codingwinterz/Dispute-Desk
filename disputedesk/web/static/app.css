@@ -673,6 +673,12 @@ button:disabled { cursor: not-allowed; }
 .case-timeline li.failed .tl-dot { border-color: var(--danger); }
 .tl-time { color: var(--muted); font-size: 13px; white-space: nowrap; }
 
+/* Buyer attachments: small thumbnails, display only. */
+.attachment-grid { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.attachment { display: grid; gap: 6px; align-content: start; }
+.attachment img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-2); }
+.attachment.unavailable { padding: 10px; border: 1px dashed var(--border); border-radius: var(--r-md); }
+
 @media (max-width: 900px) {
   h1 { font-size: 40px; }
   .verdict-band { grid-template-columns: 1fr; }
