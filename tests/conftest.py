@@ -24,3 +24,10 @@ class FakeClock:
 
     def __call__(self) -> float:
         return self.now
+
+
+@pytest.fixture(autouse=True)
+def _no_scratch_env(monkeypatch):
+    """A scratch session in the developer's shell must never leak into the tests."""
+    monkeypatch.delenv("DISPUTEDESK_DB", raising=False)
+    monkeypatch.delenv("DISPUTEDESK_GRAPH", raising=False)
