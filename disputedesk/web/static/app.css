@@ -157,6 +157,13 @@ body.shell > main { grid-area: main; width: 100%; min-width: 0; overflow-x: clip
 .live.is-live .dot { background: var(--primary-text); box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 60%, transparent); animation: live-pulse 2s ease-out infinite; }
 .live.is-offline .dot { background: var(--danger); }
 .live.is-offline .live-label { color: var(--danger); }
+/* Poller status chip beside Live. No motion; red text only via the shared .error-text when polling fails. */
+.poll-chip {
+  font-size: 12px; padding: 4px 9px; border-radius: 999px; color: var(--muted);
+  border: 1px solid var(--border); max-width: 100%; overflow-wrap: anywhere;
+}
+.poll-chip.is-failing { border-color: currentColor; font-weight: 700; }
+.poll-chip.is-recorded { color: var(--text); }
 @keyframes live-pulse {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 55%, transparent); }
   70% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--primary) 0%, transparent); }
