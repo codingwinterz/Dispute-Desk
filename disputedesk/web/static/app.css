@@ -586,6 +586,12 @@ h1 + .hero-deadline { margin-top: 30px; }  /* room for the folder tab under the 
   box-shadow: 0 0 12px -3px color-mix(in srgb, var(--primary) 60%, transparent);
 }
 
+/* Scratch mode: same pill as Demo data, dashed so the two are never mistaken for each other. */
+.scratch-badge {
+  font-size: 12px; font-weight: 700; padding: 4px 9px; border-radius: 999px;
+  color: var(--primary-text); border: 1px dashed var(--primary); background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
 /* ---- merchant records ----------------------------------------------------------------- */
 
 #note { margin-top: 14px; max-width: 70ch; }

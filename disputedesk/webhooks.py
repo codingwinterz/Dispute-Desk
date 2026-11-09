@@ -31,7 +31,7 @@ from pydantic import ValidationError
 
 from disputedesk.analyzer import Analyzer
 from disputedesk.auth import TokenProvider
-from disputedesk.config import DISPUTE_DB, LOG_DIR, Settings, load_agent_settings, load_settings
+from disputedesk.config import LOG_DIR, Settings, load_agent_settings, load_settings, targets
 from disputedesk.decision import SANDBOX_NOTE
 from disputedesk.decision_store import DecisionStore
 from disputedesk.demo import DEMO_MESSAGE, SNAPSHOT_PATH, load_snapshot, read_snapshot
@@ -180,7 +180,7 @@ def create_app(
         draft_store = DraftStore(dispute_store.path)
         submissions = SubmissionStore(dispute_store.path)  # creates its tables before loading
         merchant_store = MerchantRecordStore(dispute_store.path)
-        event_store = MerchantEventStore(dispute_store.path)  # empty: the snapshot has no merchant events
+        event_store = MerchantEventStore(dispute_store.path)  # the snapshot's recorded merchant events, if any
         load_snapshot(snapshot, dispute_store.path)
         demo_stores = [dispute_store, decision_store, policy_store, draft_store, submissions, merchant_store, event_store]
         submitter = Submitter(dispute_store, decision_store, draft_store, submissions, client=None)
@@ -188,6 +188,20 @@ def create_app(
         verifier = verifier or _DemoVerifier()  # never called: the middleware refuses every write
         demo_info = {"demo": True, "recorded_at": snapshot.get("recorded_at"), "message": DEMO_MESSAGE}
         log.info("demo mode: %d disputes from the snapshot; no PayPal, LLM or graph access", len(snapshot["disputes"]))
+    # Real store and graph, or the scratch copy (DISPUTEDESK_DB + DISPUTEDESK_GRAPH). Demo mode uses neither.
+    db_path = None
+    if not demo:
+        try:
+            target = targets()
+        except RuntimeError as exc:
+            log.error("DisputeDesk can't start: %s", exc)
+            print(f"DisputeDesk can't start: {exc}", file=sys.stderr)
+            raise SystemExit(1) from None
+        db_path = target.db
+        if target.scratch:
+            # Only names, never a local path: the page shows a "Scratch data" badge.
+            demo_info = {"demo": False, "scratch": True, "scratch_db": target.db.name, "scratch_graph": target.graph}
+            log.info("scratch mode: database %s, graph %s", target.db.name, target.graph)
     settings: Settings | None = None
     if verifier is None:
         try:
@@ -201,7 +215,7 @@ def create_app(
         http = make_client(LOG_DIR / "webhook_http.jsonl", secrets)
         verifier = PayPalSignatureVerifier(settings, TokenProvider(settings, http), http)
     store = store or EventStore(LOG_DIR)
-    dispute_store = dispute_store or DisputeStore(DISPUTE_DB)
+    dispute_store = dispute_store or DisputeStore(db_path)
     # Decisions live in the same SQLite file as the disputes.
     decision_store = decision_store or DecisionStore(dispute_store.path)
     # Read-only here (scripts import the records). Demo mode already opened one on its temporary file.
@@ -305,7 +319,7 @@ def create_app(
 
     @app.get("/api/mode")
     async def app_mode() -> JSONResponse:
-        """Whether this server is in demo mode (serving recorded sandbox data)."""
+        """Whether this server is in demo mode (recorded sandbox data) or scratch mode (a rehearsal copy)."""
         return JSONResponse(demo_info)
 
     @app.get("/api/poller")

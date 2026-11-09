@@ -47,6 +47,12 @@ const DD = (() => {
     document.body.prepend(skip, sidebar, topbar);
     startPollStatus();
     modeReady.then((m) => {
+      if (m.scratch) {
+        // Scratch mode: a rehearsal copy of the store and graph. Real PayPal sandbox, not the real local store.
+        topbar.querySelector(".topbar-status").prepend(el("span", { class: "scratch-badge",
+          title: `Scratch copy: database ${m.scratch_db}, graph ${m.scratch_graph}. The real local store and graph are not touched.`, text: "Scratch data" }));
+        document.body.classList.add("is-scratch");
+      }
       if (!m.demo) return;
       const recorded = m.recorded_at ? new Date(m.recorded_at).toLocaleString() : "an earlier session";
       topbar.querySelector(".topbar-status").prepend(el("span", { class: "demo-badge", title: `Recorded sandbox data from ${recorded}. Nothing is sent to PayPal.`, text: "Demo data" }));
@@ -62,7 +68,7 @@ const DD = (() => {
     .then((r) => (r.ok ? r.json() : { demo: false }))
     .catch(() => ({ demo: false }));
   const mode = { demo: false };
-  modeReady.then((m) => { mode.demo = Boolean(m.demo); mode.recorded_at = m.recorded_at; });
+  modeReady.then((m) => { mode.demo = Boolean(m.demo); mode.recorded_at = m.recorded_at; mode.scratch = Boolean(m.scratch); });
 
   // Live indicator: pages report each request to the local server. "Live" (pulsing) only while the
   // last request succeeded; "Offline" (red, still) after a failure. Shows how long ago it last answered.
