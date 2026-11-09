@@ -487,14 +487,18 @@
     const sub = submit && submit.submission;
     const afterEvent = Boolean(rec && rec.trigger && rec.trigger.startsWith("merchant_event:"));
     const verdict = (r) => (r.decision === "DEFEND" ? "Defend" : "Accept");
+    // Every analysis entry, earlier or current, reads "Accept, risk 35".
+    const outcome = (r) => `${verdict(r)}, risk ${r.risk_score === null || r.risk_score === undefined ? "not scored" : r.risk_score}`;
     const steps = [
-      [d.detected_at, `Detected through the ${d.detected_via === "webhook" ? "PayPal webhook" : "dispute poller"}`, ""],
+      // A dispute detected live shows how fast it was seen; otherwise which path saw it.
+      [d.detected_at, DD.detectionText(d.create_time, d.detected_at, d.detected_via)
+        || `Detected through the ${d.detected_via === "webhook" ? "PayPal webhook" : "dispute poller"}`, ""],
       // Earlier decisions (kept when the agent re-decided), then the current one.
-      ...caseHistory.map((h) => [h.created_at, h.status === "ok" ? `Analyzed by the agent: ${verdict(h)}, risk ${h.risk_score}` : "Analysis failed",
+      ...caseHistory.map((h) => [h.created_at, h.status === "ok" ? `Analyzed by the agent: ${outcome(h)}` : "Analysis failed",
                                   h.status === "ok" ? "" : "failed"]),
       ...caseEvents.map((e) => [e.received_at, `Merchant event received: ${String(e.status).toLowerCase().replaceAll("_", " ")} scan (simulated)`, "event"]),
       [rec && rec.created_at, rec ? (rec.status === "ok"
-        ? (afterEvent ? `Re-analyzed after the merchant event: ${verdict(rec)}, risk ${rec.risk_score}` : "Analyzed by the agent")
+        ? (afterEvent ? `Re-analyzed after the merchant event: ${outcome(rec)}` : `Analyzed by the agent: ${outcome(rec)}`)
         : "Analysis failed") : "", rec && rec.status !== "ok" ? "failed" : ""],
       [draft && draft.edited ? draft.updated_at : null, "Draft edited and saved", ""],
       [sub && sub.started_at, sub ? ({ provide_evidence: "You approved sending evidence to PayPal", accept_claim: "You approved accepting the claim" }[sub.action]
