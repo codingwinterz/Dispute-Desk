@@ -2,7 +2,7 @@
 
 An AI agent that decides whether to defend or settle PayPal disputes.
 The agent recommends; nothing is sent to PayPal until the merchant approves.
-This branch (`sandbox-spike`) only proves that the real PayPal sandbox dispute flow works.
+This repository only proves that the real PayPal sandbox dispute flow works.
 
 ## How it works
 
@@ -35,13 +35,18 @@ flowchart LR
 Needs Python 3.12 and git. Demo mode serves recorded sandbox data from `data/demo_snapshot.json`; it
 makes no PayPal, Gemini or FalkorDB calls and every write (including Approve) is disabled.
 
-```sh
-git clone https://github.com/codingwinterz/Dispute-Desk.git && cd Dispute-Desk && git checkout sandbox-spike
-py -3.12 -m venv .venv && .venv\Scripts\python -m pip install -r requirements.txt
+Windows Command Prompt or PowerShell (the commands are the same in both):
+
+```
+git clone https://github.com/codingwinterz/Dispute-Desk.git
+cd Dispute-Desk
+py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
 .venv\Scripts\python scripts/demo.py
 ```
 
 Then open http://127.0.0.1:8000/ (the Overview; the queue is at http://127.0.0.1:8000/queue). (macOS/Linux: `python3.12 -m venv .venv`, then `.venv/bin/python`.)
+If port 8000 is in use, run `scripts/demo.py --port 8010` and open that port instead.
 The top bar shows **Demo data**. The snapshot includes one simulated carrier event on the YOV dispute, labelled as a
 recorded, simulated merchant event. Buyer and account identifiers in the snapshot are anonymised placeholders.
 
