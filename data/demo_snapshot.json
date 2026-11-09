@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "recorded_at": "2026-11-08T00:31:56.335038+00:00",
+  "recorded_at": "2026-11-09T07:13:20.029741+00:00",
   "about": "Recorded PayPal sandbox disputes and DisputeDesk's decisions, for demo mode. Buyer and merchant identifiers are pseudonymised; shipments, devices and past disputes are seeded test data.",
   "disputes": [
     {
@@ -67,38 +67,19 @@
       "full_fetched": 1,
       "data": {
         "dispute_id": "PP-R-IQA-10196863",
-        "status": "WAITING_FOR_SELLER_RESPONSE",
+        "status": "RESOLVED",
         "dispute_life_cycle_stage": "CHARGEBACK",
         "reason": "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
         "dispute_amount": {
           "currency_code": "USD",
           "value": "10.00"
         },
-        "seller_response_due_date": "2026-11-17T04:59:59.000Z",
         "create_time": "2026-11-06T16:45:50.702Z",
-        "update_time": "2026-11-06T16:49:00.858Z",
-        "allowed_response_options": {
-          "accept_claim": {
-            "accept_claim_types": [
-              "REFUND",
-              "PARTIAL_REFUND",
-              "REFUND_WITH_RETURN",
-              "REFUND_WITH_RETURN_SHIPMENT_LABEL"
-            ]
-          }
-        },
+        "update_time": "2026-11-08T12:55:27.332Z",
         "links": [
           {
             "rel": "self",
             "method": "GET"
-          },
-          {
-            "rel": "accept_claim",
-            "method": "POST"
-          },
-          {
-            "rel": "provide_evidence",
-            "method": "POST"
           }
         ],
         "disputed_transactions": [
@@ -112,7 +93,7 @@
             },
             "seller_protection_eligible": true,
             "seller_protection_type": "EXPANDED_SELLER_PROTECTION",
-            "transaction_status": "HELD"
+            "transaction_status": "REFUNDED"
           }
         ]
       }
@@ -229,6 +210,150 @@
             "gross_amount": {
               "currency_code": "USD",
               "value": "25.00"
+            },
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION",
+            "transaction_status": "HELD"
+          }
+        ]
+      }
+    },
+    {
+      "dispute_id": "PP-R-CTG-10197156",
+      "source": "paypal",
+      "detected_via": "poll",
+      "detected_at": "2026-11-08T17:15:27.578887+00:00",
+      "full_fetched": 1,
+      "data": {
+        "dispute_id": "PP-R-CTG-10197156",
+        "status": "WAITING_FOR_SELLER_RESPONSE",
+        "dispute_life_cycle_stage": "INQUIRY",
+        "reason": "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+        "dispute_amount": {
+          "currency_code": "USD",
+          "value": "12.00"
+        },
+        "seller_response_due_date": "2026-11-28T17:12:18.485Z",
+        "create_time": "2026-11-08T17:12:18.485Z",
+        "update_time": "2026-11-08T17:15:43.718Z",
+        "allowed_response_options": {
+          "accept_claim": {
+            "accept_claim_types": [
+              "PARTIAL_REFUND",
+              "REFUND_WITH_RETURN",
+              "REFUND"
+            ]
+          },
+          "make_offer": {
+            "offer_types": [
+              "REFUND",
+              "REFUND_WITH_RETURN"
+            ]
+          }
+        },
+        "links": [
+          {
+            "rel": "self",
+            "method": "GET"
+          },
+          {
+            "rel": "accept_claim",
+            "method": "POST"
+          },
+          {
+            "rel": "send_message",
+            "method": "POST"
+          },
+          {
+            "rel": "escalate",
+            "method": "POST"
+          },
+          {
+            "rel": "make_offer",
+            "method": "POST"
+          }
+        ],
+        "disputed_transactions": [
+          {
+            "seller_transaction_id": "1XJ49513EU1506726",
+            "buyer_transaction_id": "2GH63453FY214545E",
+            "create_time": "2026-11-08T17:07:43.000Z",
+            "gross_amount": {
+              "currency_code": "USD",
+              "value": "12.00"
+            },
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION",
+            "transaction_status": "HELD"
+          }
+        ]
+      }
+    },
+    {
+      "dispute_id": "PP-R-WZR-10197157",
+      "source": "paypal",
+      "detected_via": "poll",
+      "detected_at": "2026-11-08T17:16:53.710083+00:00",
+      "full_fetched": 1,
+      "data": {
+        "dispute_id": "PP-R-WZR-10197157",
+        "status": "WAITING_FOR_SELLER_RESPONSE",
+        "dispute_life_cycle_stage": "INQUIRY",
+        "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+        "dispute_amount": {
+          "currency_code": "USD",
+          "value": "27.00"
+        },
+        "seller_response_due_date": "2026-11-28T17:13:33.143Z",
+        "create_time": "2026-11-08T17:13:33.143Z",
+        "update_time": "2026-11-08T17:17:02.979Z",
+        "allowed_response_options": {
+          "accept_claim": {
+            "accept_claim_types": [
+              "PARTIAL_REFUND",
+              "REFUND"
+            ]
+          },
+          "make_offer": {
+            "offer_types": [
+              "REFUND"
+            ]
+          }
+        },
+        "links": [
+          {
+            "rel": "self",
+            "method": "GET"
+          },
+          {
+            "rel": "accept_claim",
+            "method": "POST"
+          },
+          {
+            "rel": "provide_evidence",
+            "method": "POST"
+          },
+          {
+            "rel": "send_message",
+            "method": "POST"
+          },
+          {
+            "rel": "escalate",
+            "method": "POST"
+          },
+          {
+            "rel": "make_offer",
+            "method": "POST"
+          }
+        ],
+        "disputed_transactions": [
+          {
+            "seller_transaction_id": "2TA89366WK946074Y",
+            "buyer_transaction_id": "2RX88247D7999650J",
+            "create_time": "2026-11-08T17:08:09.000Z",
+            "gross_amount": {
+              "currency_code": "USD",
+              "value": "27.00"
             },
             "seller_protection_eligible": true,
             "seller_protection_type": "EXPANDED_SELLER_PROTECTION",
@@ -379,7 +504,8 @@
           "id": "P4",
           "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: ACCEPT when there is no carrier scan after the label was created, because there is no proof of shipment or delivery."
         }
-      ]
+      ],
+      "trigger": null
     },
     {
       "dispute_id": "PP-R-JTQ-10195324",
@@ -520,7 +646,8 @@
           "id": "P4",
           "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: ACCEPT when there is no carrier scan after the label was created, because there is no proof of shipment or delivery."
         }
-      ]
+      ],
+      "trigger": null
     },
     {
       "dispute_id": "PP-R-QQW-10196399",
@@ -689,34 +816,323 @@
           "id": "P4",
           "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: ACCEPT when there is no carrier scan after the label was created, because there is no proof of shipment or delivery."
         }
-      ]
+      ],
+      "trigger": null
+    },
+    {
+      "dispute_id": "PP-R-CTG-10197156",
+      "status": "ok",
+      "decision": "ACCEPT",
+      "risk_score": 15,
+      "reasoning": [
+        {
+          "point": "The disputed amount is 12.00 USD, which is under the 15.00 USD threshold.",
+          "cites": [
+            "F1",
+            "P2"
+          ]
+        },
+        {
+          "point": "No other dispute shares this checkout's device hash or IP.",
+          "cites": [
+            "F7",
+            "P2"
+          ]
+        },
+        {
+          "point": "Contesting costs more than the amount, so we recommend accepting.",
+          "cites": [
+            "P2"
+          ]
+        }
+      ],
+      "evidence_summary": "Shipment and device records cited here are merchant-supplied sandbox test data. We are accepting dispute PP-R-CTG-10197156 for transaction 1XJ49513EU1506726 in the amount of 12.00 USD because contesting costs more than the amount under policy rule P2, given that the disputed amount is under 15.00 USD and no other dispute shares this checkout device or IP.",
+      "facts": [
+        {
+          "id": "F1",
+          "text": "Dispute PP-R-CTG-10197156: reason MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED, amount 12.00 USD, stage INQUIRY, status WAITING_FOR_SELLER_RESPONSE, seller response due 2026-11-28T17:12:18.485Z.",
+          "source": "paypal",
+          "ref": "dispute"
+        },
+        {
+          "id": "F2",
+          "text": "Buyer PayPal payer_id sandbox-buyer-1.",
+          "source": "paypal",
+          "ref": "customer"
+        },
+        {
+          "id": "F3",
+          "text": "Transaction 1XJ49513EU1506726 created 2026-11-08T17:07:43.000Z for 12.00 USD.",
+          "source": "paypal",
+          "ref": "transaction"
+        },
+        {
+          "id": "F4",
+          "text": "PayPal marks transaction 1XJ49513EU1506726 seller_protection_eligible=true (EXPANDED_SELLER_PROTECTION).",
+          "source": "paypal",
+          "ref": "transaction"
+        },
+        {
+          "id": "F5",
+          "text": "Shipment SEED-SHP-CTG via USPS (tracking 9400SEED00000005) to Columbus, OH, US: status DELIVERED, shipped 2026-11-08T17:09:14Z, delivered 2026-11-08T17:10:46Z, signed by buyer: no.",
+          "source": "seeded",
+          "ref": "shipment"
+        },
+        {
+          "id": "F6",
+          "text": "Checkout telemetry SEED-TEL-CTG: IP 198.51.100.61 (geolocated Columbus, OH, US), device hash dev-6d2e18.",
+          "source": "seeded",
+          "ref": "telemetry"
+        },
+        {
+          "id": "F7",
+          "text": "No other dispute shares this checkout's device hash or IP.",
+          "source": "seeded",
+          "ref": "telemetry"
+        }
+      ],
+      "graph_context": {
+        "dispute": {
+          "id": "PP-R-CTG-10197156",
+          "reason": "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+          "status": "WAITING_FOR_SELLER_RESPONSE",
+          "stage": "INQUIRY",
+          "amount": 12.0,
+          "currency": "USD",
+          "due": "2026-11-28T17:12:18.485Z",
+          "source": "paypal"
+        },
+        "customer": {
+          "payer_id": "sandbox-buyer-1",
+          "source": "paypal"
+        },
+        "transaction": {
+          "id": "1XJ49513EU1506726",
+          "buyer_transaction_id": "2GH63453FY214545E",
+          "create_time": "2026-11-08T17:07:43.000Z",
+          "amount": 12.0,
+          "currency": "USD",
+          "seller_protection_eligible": true,
+          "seller_protection_type": "EXPANDED_SELLER_PROTECTION",
+          "source": "paypal"
+        },
+        "shipment": {
+          "id": "SEED-SHP-CTG",
+          "carrier": "USPS",
+          "tracking_id": "9400SEED00000005",
+          "status": "DELIVERED",
+          "shipped_at": "2026-11-08T17:09:14Z",
+          "delivered_at": "2026-11-08T17:10:46Z",
+          "last_scan": null,
+          "signed_by_buyer": false,
+          "destination": "Columbus, OH, US",
+          "source": "seeded"
+        },
+        "telemetry": {
+          "id": "SEED-TEL-CTG",
+          "ip": "198.51.100.61",
+          "device_hash": "dev-6d2e18",
+          "geo": "Columbus, OH, US",
+          "source": "seeded"
+        },
+        "linked_disputes": [],
+        "events": []
+      },
+      "model": "gemini/gemini-3.5-flash-lite",
+      "attempts": 1,
+      "error": null,
+      "created_at": "2026-11-08T17:48:13.493407+00:00",
+      "rules": [
+        {
+          "id": "P1",
+          "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: DEFEND when the carrier shows the parcel DELIVERED to the shipping destination, strongest with a buyer signature."
+        },
+        {
+          "id": "P2",
+          "text": "Recommend ACCEPT when the disputed amount is under 15.00 USD and no other dispute shares the checkout device or IP: contesting costs more than the amount."
+        },
+        {
+          "id": "P3",
+          "text": "DEFEND when the checkout device hash or IP is shared with 2 or more other disputes: a repeat pattern across disputes justifies contesting. A pattern is not proof. P3 takes precedence over P2."
+        },
+        {
+          "id": "P4",
+          "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: ACCEPT when there is no carrier scan after the label was created, because there is no proof of shipment or delivery."
+        }
+      ],
+      "trigger": null
+    },
+    {
+      "dispute_id": "PP-R-WZR-10197157",
+      "status": "ok",
+      "decision": "DEFEND",
+      "risk_score": 10,
+      "reasoning": [
+        {
+          "point": "The carrier delivered the shipment to the destination with a buyer signature, supporting a defense for merchandise not received.",
+          "cites": [
+            "F5",
+            "P1"
+          ]
+        },
+        {
+          "point": "The transaction is marked as eligible for seller protection by PayPal.",
+          "cites": [
+            "F4"
+          ]
+        },
+        {
+          "point": "The shipment was delivered successfully to Phoenix, AZ, matching the geolocation of the checkout telemetry.",
+          "cites": [
+            "F5",
+            "F6"
+          ]
+        }
+      ],
+      "evidence_summary": "Shipment and device records cited here are merchant-supplied sandbox test data. Transaction 2TA89366WK946074Y for 27.00 USD was shipped via UPS with tracking 1ZSEED0000000006 and was delivered on 2026-11-08 to Phoenix, AZ, signed by the buyer. The transaction is eligible for seller protection.",
+      "facts": [
+        {
+          "id": "F1",
+          "text": "Dispute PP-R-WZR-10197157: reason MERCHANDISE_OR_SERVICE_NOT_RECEIVED, amount 27.00 USD, stage INQUIRY, status WAITING_FOR_SELLER_RESPONSE, seller response due 2026-11-28T17:13:33.143Z.",
+          "source": "paypal",
+          "ref": "dispute"
+        },
+        {
+          "id": "F2",
+          "text": "Buyer PayPal payer_id sandbox-buyer-1.",
+          "source": "paypal",
+          "ref": "customer"
+        },
+        {
+          "id": "F3",
+          "text": "Transaction 2TA89366WK946074Y created 2026-11-08T17:08:09.000Z for 27.00 USD.",
+          "source": "paypal",
+          "ref": "transaction"
+        },
+        {
+          "id": "F4",
+          "text": "PayPal marks transaction 2TA89366WK946074Y seller_protection_eligible=true (EXPANDED_SELLER_PROTECTION).",
+          "source": "paypal",
+          "ref": "transaction"
+        },
+        {
+          "id": "F5",
+          "text": "Shipment SEED-SHP-WZR via UPS (tracking 1ZSEED0000000006) to Phoenix, AZ, US: status DELIVERED, shipped 2026-11-08T17:09:57Z, delivered 2026-11-08T17:11:45Z, signed by buyer: yes.",
+          "source": "seeded",
+          "ref": "shipment"
+        },
+        {
+          "id": "F6",
+          "text": "Checkout telemetry SEED-TEL-WZR: IP 203.0.113.140 (geolocated Phoenix, AZ, US), device hash dev-b37a40.",
+          "source": "seeded",
+          "ref": "telemetry"
+        },
+        {
+          "id": "F7",
+          "text": "No other dispute shares this checkout's device hash or IP.",
+          "source": "seeded",
+          "ref": "telemetry"
+        }
+      ],
+      "graph_context": {
+        "dispute": {
+          "id": "PP-R-WZR-10197157",
+          "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+          "status": "WAITING_FOR_SELLER_RESPONSE",
+          "stage": "INQUIRY",
+          "amount": 27.0,
+          "currency": "USD",
+          "due": "2026-11-28T17:13:33.143Z",
+          "source": "paypal"
+        },
+        "customer": {
+          "payer_id": "sandbox-buyer-1",
+          "source": "paypal"
+        },
+        "transaction": {
+          "id": "2TA89366WK946074Y",
+          "buyer_transaction_id": "2RX88247D7999650J",
+          "create_time": "2026-11-08T17:08:09.000Z",
+          "amount": 27.0,
+          "currency": "USD",
+          "seller_protection_eligible": true,
+          "seller_protection_type": "EXPANDED_SELLER_PROTECTION",
+          "source": "paypal"
+        },
+        "shipment": {
+          "id": "SEED-SHP-WZR",
+          "carrier": "UPS",
+          "tracking_id": "1ZSEED0000000006",
+          "status": "DELIVERED",
+          "shipped_at": "2026-11-08T17:09:57Z",
+          "delivered_at": "2026-11-08T17:11:45Z",
+          "last_scan": null,
+          "signed_by_buyer": true,
+          "destination": "Phoenix, AZ, US",
+          "source": "seeded"
+        },
+        "telemetry": {
+          "id": "SEED-TEL-WZR",
+          "ip": "203.0.113.140",
+          "device_hash": "dev-b37a40",
+          "geo": "Phoenix, AZ, US",
+          "source": "seeded"
+        },
+        "linked_disputes": [],
+        "events": []
+      },
+      "model": "gemini/gemini-3.5-flash-lite",
+      "attempts": 1,
+      "error": null,
+      "created_at": "2026-11-08T17:48:23.263236+00:00",
+      "rules": [
+        {
+          "id": "P1",
+          "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: DEFEND when the carrier shows the parcel DELIVERED to the shipping destination, strongest with a buyer signature."
+        },
+        {
+          "id": "P2",
+          "text": "Recommend ACCEPT when the disputed amount is under 15.00 USD and no other dispute shares the checkout device or IP: contesting costs more than the amount."
+        },
+        {
+          "id": "P3",
+          "text": "DEFEND when the checkout device hash or IP is shared with 2 or more other disputes: a repeat pattern across disputes justifies contesting. A pattern is not proof. P3 takes precedence over P2."
+        },
+        {
+          "id": "P4",
+          "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: ACCEPT when there is no carrier scan after the label was created, because there is no proof of shipment or delivery."
+        }
+      ],
+      "trigger": null
     },
     {
       "dispute_id": "PP-R-YOV-10196864",
       "status": "ok",
-      "decision": "ACCEPT",
-      "risk_score": 80,
+      "decision": "DEFEND",
+      "risk_score": 15,
       "reasoning": [
         {
-          "point": "The shipment status shows only a label created with no carrier scan since.",
+          "point": "The carrier reported the parcel as delivered to the shipping address with a buyer signature captured.",
           "cites": [
-            "F5"
+            "F6",
+            "P1"
           ]
         },
         {
-          "point": "There is no proof of shipment or delivery when no carrier scan exists.",
+          "point": "PayPal marks the transaction as eligible for seller protection.",
           "cites": [
-            "P4"
+            "F4"
           ]
         },
         {
-          "point": "The dispute reason is merchandise or service not received.",
+          "point": "The shipment has a carrier delivery scan despite the initial label-only status.",
           "cites": [
-            "F1"
+            "F5",
+            "F6"
           ]
         }
       ],
-      "evidence_summary": "Shipment and device records cited here are merchant-supplied sandbox test data. We are accepting the dispute for transaction 5GU29781PX414531M regarding dispute PP-R-YOV-10196864 for 50.00 USD, as there is no carrier scan after the label was created.",
+      "evidence_summary": "Shipment and device records cited here are merchant-supplied sandbox test data. We are contesting the dispute for transaction 5GU29781PX414531M, for 50.00 USD, because the carrier USPS reported the status as delivered at Denver, CO, on 2026-11-07, with a signature captured from the buyer. Furthermore, PayPal marks this transaction as seller protection eligible.",
       "facts": [
         {
           "id": "F1",
@@ -750,12 +1166,18 @@
         },
         {
           "id": "F6",
+          "text": "Simulated merchant event EVT-YOV-SCAN-1 (carrier scan): carrier USPS reported status DELIVERED at Denver, CO, US on 2026-11-07T19:42:00Z, signed by buyer: yes. Note: Late carrier scan received after the dispute opened: delivered to the shipping address, signature captured..",
+          "source": "seeded",
+          "ref": "shipment"
+        },
+        {
+          "id": "F7",
           "text": "Checkout telemetry SEED-TEL-YOV: IP 198.51.100.7 (geolocated Denver, CO, US), device hash dev-21c4be.",
           "source": "seeded",
           "ref": "telemetry"
         },
         {
-          "id": "F7",
+          "id": "F8",
           "text": "No other dispute shares this checkout's device hash or IP.",
           "source": "seeded",
           "ref": "telemetry"
@@ -805,12 +1227,26 @@
           "geo": "Denver, CO, US",
           "source": "seeded"
         },
-        "linked_disputes": []
+        "linked_disputes": [],
+        "events": [
+          {
+            "id": "EVT-YOV-SCAN-1",
+            "kind": "carrier_scan",
+            "status": "DELIVERED",
+            "location": "Denver, CO, US",
+            "time": "2026-11-07T19:42:00Z",
+            "carrier": "USPS",
+            "signed_by_buyer": true,
+            "note": "Late carrier scan received after the dispute opened: delivered to the shipping address, signature captured.",
+            "label": "simulated merchant event",
+            "source": "seeded"
+          }
+        ]
       },
       "model": "gemini/gemini-3.5-flash-lite",
       "attempts": 1,
       "error": null,
-      "created_at": "2026-11-07T16:06:35.005743+00:00",
+      "created_at": "2026-11-09T07:13:07.393922+00:00",
       "rules": [
         {
           "id": "P1",
@@ -828,7 +1264,734 @@
           "id": "P4",
           "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: ACCEPT when there is no carrier scan after the label was created, because there is no proof of shipment or delivery."
         }
-      ]
+      ],
+      "trigger": "merchant_event:EVT-YOV-SCAN-1"
+    }
+  ],
+  "decision_history": [
+    {
+      "dispute_id": "PP-R-CTG-10197156",
+      "archived_at": "2026-11-08T17:23:43.646600+00:00",
+      "replaced_by": null,
+      "record": {
+        "dispute_id": "PP-R-CTG-10197156",
+        "status": "ok",
+        "decision": "ACCEPT",
+        "risk_score": 80,
+        "reasoning": [
+          {
+            "point": "The disputed amount is 12.00 USD, which is under the 15.00 USD threshold.",
+            "cites": [
+              "F1",
+              "P2"
+            ]
+          },
+          {
+            "point": "No other dispute shares this checkout device or IP, meaning no repeat pattern applies.",
+            "cites": [
+              "F7",
+              "P2"
+            ]
+          },
+          {
+            "point": "Contesting costs more than the amount.",
+            "cites": [
+              "P2"
+            ]
+          }
+        ],
+        "evidence_summary": "Shipment and device records cited here are merchant-supplied sandbox test data. We accept the dispute for transaction 1XJ49513EU1506726 in the amount of 12.00 USD because contesting the claim costs more than the amount.",
+        "facts": [
+          {
+            "id": "F1",
+            "text": "Dispute PP-R-CTG-10197156: reason MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED, amount 12.00 USD, stage INQUIRY, status UNDER_REVIEW, seller response due None.",
+            "source": "paypal",
+            "ref": "dispute"
+          },
+          {
+            "id": "F2",
+            "text": "Buyer PayPal payer_id sandbox-buyer-1.",
+            "source": "paypal",
+            "ref": "customer"
+          },
+          {
+            "id": "F3",
+            "text": "Transaction 1XJ49513EU1506726 created 2026-11-08T17:07:43.000Z for 12.00 USD.",
+            "source": "paypal",
+            "ref": "transaction"
+          },
+          {
+            "id": "F4",
+            "text": "PayPal marks transaction 1XJ49513EU1506726 seller_protection_eligible=true (EXPANDED_SELLER_PROTECTION).",
+            "source": "paypal",
+            "ref": "transaction"
+          },
+          {
+            "id": "F5",
+            "text": "No shipment record is on file for this transaction.",
+            "source": "seeded",
+            "ref": "shipment"
+          },
+          {
+            "id": "F6",
+            "text": "No checkout telemetry is on file for this transaction.",
+            "source": "seeded",
+            "ref": "telemetry"
+          },
+          {
+            "id": "F7",
+            "text": "No other dispute shares this checkout's device hash or IP.",
+            "source": "seeded",
+            "ref": "telemetry"
+          }
+        ],
+        "graph_context": {
+          "dispute": {
+            "id": "PP-R-CTG-10197156",
+            "reason": "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+            "status": "UNDER_REVIEW",
+            "stage": "INQUIRY",
+            "amount": 12.0,
+            "currency": "USD",
+            "due": null,
+            "source": "paypal"
+          },
+          "customer": {
+            "payer_id": "sandbox-buyer-1",
+            "source": "paypal"
+          },
+          "transaction": {
+            "id": "1XJ49513EU1506726",
+            "buyer_transaction_id": "2GH63453FY214545E",
+            "create_time": "2026-11-08T17:07:43.000Z",
+            "amount": 12.0,
+            "currency": "USD",
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION",
+            "source": "paypal"
+          },
+          "shipment": null,
+          "telemetry": null,
+          "linked_disputes": [],
+          "events": []
+        },
+        "model": "gemini/gemini-3.5-flash-lite",
+        "attempts": 1,
+        "error": null,
+        "created_at": "2026-11-08T17:15:30.450861+00:00",
+        "rules": [
+          {
+            "id": "P1",
+            "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: DEFEND when the carrier shows the parcel DELIVERED to the shipping destination, strongest with a buyer signature."
+          },
+          {
+            "id": "P2",
+            "text": "Recommend ACCEPT when the disputed amount is under 15.00 USD and no other dispute shares the checkout device or IP: contesting costs more than the amount."
+          },
+          {
+            "id": "P3",
+            "text": "DEFEND when the checkout device hash or IP is shared with 2 or more other disputes: a repeat pattern across disputes justifies contesting. A pattern is not proof. P3 takes precedence over P2."
+          },
+          {
+            "id": "P4",
+            "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: ACCEPT when there is no carrier scan after the label was created, because there is no proof of shipment or delivery."
+          }
+        ],
+        "trigger": null
+      }
+    },
+    {
+      "dispute_id": "PP-R-WZR-10197157",
+      "archived_at": "2026-11-08T17:24:02.185584+00:00",
+      "replaced_by": null,
+      "record": {
+        "dispute_id": "PP-R-WZR-10197157",
+        "status": "ok",
+        "decision": "ACCEPT",
+        "risk_score": 85,
+        "reasoning": [
+          {
+            "point": "The buyer filed a dispute for merchandise not received for transaction 2TA89366WK946074Y with an amount of 27.00 USD.",
+            "cites": [
+              "F1",
+              "F3"
+            ]
+          },
+          {
+            "point": "There is no shipment record on file for this transaction, meaning there is no proof of shipment or delivery.",
+            "cites": [
+              "F5",
+              "P4"
+            ]
+          },
+          {
+            "point": "We accept the claim because there is no carrier scan after the label was created.",
+            "cites": [
+              "F5",
+              "P4"
+            ]
+          }
+        ],
+        "evidence_summary": "Shipment and device records cited here are merchant-supplied sandbox test data. Dispute PP-R-WZR-10197157 for transaction 2TA89366WK946074Y in the amount of 27.00 USD is accepted because there is no shipment record on file for this transaction.",
+        "facts": [
+          {
+            "id": "F1",
+            "text": "Dispute PP-R-WZR-10197157: reason MERCHANDISE_OR_SERVICE_NOT_RECEIVED, amount 27.00 USD, stage INQUIRY, status UNDER_REVIEW, seller response due None.",
+            "source": "paypal",
+            "ref": "dispute"
+          },
+          {
+            "id": "F2",
+            "text": "Buyer PayPal payer_id sandbox-buyer-1.",
+            "source": "paypal",
+            "ref": "customer"
+          },
+          {
+            "id": "F3",
+            "text": "Transaction 2TA89366WK946074Y created 2026-11-08T17:08:09.000Z for 27.00 USD.",
+            "source": "paypal",
+            "ref": "transaction"
+          },
+          {
+            "id": "F4",
+            "text": "PayPal marks transaction 2TA89366WK946074Y seller_protection_eligible=true (EXPANDED_SELLER_PROTECTION).",
+            "source": "paypal",
+            "ref": "transaction"
+          },
+          {
+            "id": "F5",
+            "text": "No shipment record is on file for this transaction.",
+            "source": "seeded",
+            "ref": "shipment"
+          },
+          {
+            "id": "F6",
+            "text": "No checkout telemetry is on file for this transaction.",
+            "source": "seeded",
+            "ref": "telemetry"
+          },
+          {
+            "id": "F7",
+            "text": "No other dispute shares this checkout's device hash or IP.",
+            "source": "seeded",
+            "ref": "telemetry"
+          }
+        ],
+        "graph_context": {
+          "dispute": {
+            "id": "PP-R-WZR-10197157",
+            "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+            "status": "UNDER_REVIEW",
+            "stage": "INQUIRY",
+            "amount": 27.0,
+            "currency": "USD",
+            "due": null,
+            "source": "paypal"
+          },
+          "customer": {
+            "payer_id": "sandbox-buyer-1",
+            "source": "paypal"
+          },
+          "transaction": {
+            "id": "2TA89366WK946074Y",
+            "buyer_transaction_id": "2RX88247D7999650J",
+            "create_time": "2026-11-08T17:08:09.000Z",
+            "amount": 27.0,
+            "currency": "USD",
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION",
+            "source": "paypal"
+          },
+          "shipment": null,
+          "telemetry": null,
+          "linked_disputes": [],
+          "events": []
+        },
+        "model": "gemini/gemini-3.5-flash-lite",
+        "attempts": 1,
+        "error": null,
+        "created_at": "2026-11-08T17:16:55.291330+00:00",
+        "rules": [
+          {
+            "id": "P1",
+            "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: DEFEND when the carrier shows the parcel DELIVERED to the shipping destination, strongest with a buyer signature."
+          },
+          {
+            "id": "P2",
+            "text": "Recommend ACCEPT when the disputed amount is under 15.00 USD and no other dispute shares the checkout device or IP: contesting costs more than the amount."
+          },
+          {
+            "id": "P3",
+            "text": "DEFEND when the checkout device hash or IP is shared with 2 or more other disputes: a repeat pattern across disputes justifies contesting. A pattern is not proof. P3 takes precedence over P2."
+          },
+          {
+            "id": "P4",
+            "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: ACCEPT when there is no carrier scan after the label was created, because there is no proof of shipment or delivery."
+          }
+        ],
+        "trigger": null
+      }
+    },
+    {
+      "dispute_id": "PP-R-CTG-10197156",
+      "archived_at": "2026-11-08T17:48:13.493407+00:00",
+      "replaced_by": null,
+      "record": {
+        "dispute_id": "PP-R-CTG-10197156",
+        "status": "ok",
+        "decision": "ACCEPT",
+        "risk_score": 35,
+        "reasoning": [
+          {
+            "point": "The disputed amount is 12.00 USD, which is under the 15.00 USD threshold.",
+            "cites": [
+              "F1",
+              "P2"
+            ]
+          },
+          {
+            "point": "No other dispute shares this checkout device hash or IP.",
+            "cites": [
+              "F7",
+              "P2"
+            ]
+          },
+          {
+            "point": "Contesting the dispute costs more than the amount, so we recommend accepting.",
+            "cites": [
+              "P2"
+            ]
+          }
+        ],
+        "evidence_summary": "Shipment and device records cited here are merchant-supplied sandbox test data. Transaction 1XJ49513EU1506726 was created for 12.00 USD. The disputed amount is under 15.00 USD and no other dispute shares this checkout's device hash or IP, so we accept the claim as contesting costs more than the amount.",
+        "facts": [
+          {
+            "id": "F1",
+            "text": "Dispute PP-R-CTG-10197156: reason MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED, amount 12.00 USD, stage INQUIRY, status WAITING_FOR_SELLER_RESPONSE, seller response due 2026-11-28T17:12:18.485Z.",
+            "source": "paypal",
+            "ref": "dispute"
+          },
+          {
+            "id": "F2",
+            "text": "Buyer PayPal payer_id sandbox-buyer-1.",
+            "source": "paypal",
+            "ref": "customer"
+          },
+          {
+            "id": "F3",
+            "text": "Transaction 1XJ49513EU1506726 created 2026-11-08T17:07:43.000Z for 12.00 USD.",
+            "source": "paypal",
+            "ref": "transaction"
+          },
+          {
+            "id": "F4",
+            "text": "PayPal marks transaction 1XJ49513EU1506726 seller_protection_eligible=true (EXPANDED_SELLER_PROTECTION).",
+            "source": "paypal",
+            "ref": "transaction"
+          },
+          {
+            "id": "F5",
+            "text": "Shipment SEED-SHP-CTG via USPS (tracking 9400SEED00000005) to Columbus, OH, US: status DELIVERED, shipped 2026-11-08T17:09:00Z, delivered 2026-11-08T17:16:00Z, signed by buyer: no.",
+            "source": "seeded",
+            "ref": "shipment"
+          },
+          {
+            "id": "F6",
+            "text": "Checkout telemetry SEED-TEL-CTG: IP 198.51.100.61 (geolocated Columbus, OH, US), device hash dev-6d2e18.",
+            "source": "seeded",
+            "ref": "telemetry"
+          },
+          {
+            "id": "F7",
+            "text": "No other dispute shares this checkout's device hash or IP.",
+            "source": "seeded",
+            "ref": "telemetry"
+          }
+        ],
+        "graph_context": {
+          "dispute": {
+            "id": "PP-R-CTG-10197156",
+            "reason": "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+            "status": "WAITING_FOR_SELLER_RESPONSE",
+            "stage": "INQUIRY",
+            "amount": 12.0,
+            "currency": "USD",
+            "due": "2026-11-28T17:12:18.485Z",
+            "source": "paypal"
+          },
+          "customer": {
+            "payer_id": "sandbox-buyer-1",
+            "source": "paypal"
+          },
+          "transaction": {
+            "id": "1XJ49513EU1506726",
+            "buyer_transaction_id": "2GH63453FY214545E",
+            "create_time": "2026-11-08T17:07:43.000Z",
+            "amount": 12.0,
+            "currency": "USD",
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION",
+            "source": "paypal"
+          },
+          "shipment": {
+            "id": "SEED-SHP-CTG",
+            "carrier": "USPS",
+            "tracking_id": "9400SEED00000005",
+            "status": "DELIVERED",
+            "shipped_at": "2026-11-08T17:09:00Z",
+            "delivered_at": "2026-11-08T17:16:00Z",
+            "last_scan": null,
+            "signed_by_buyer": false,
+            "destination": "Columbus, OH, US",
+            "source": "seeded"
+          },
+          "telemetry": {
+            "id": "SEED-TEL-CTG",
+            "ip": "198.51.100.61",
+            "device_hash": "dev-6d2e18",
+            "geo": "Columbus, OH, US",
+            "source": "seeded"
+          },
+          "linked_disputes": [],
+          "events": []
+        },
+        "model": "gemini/gemini-3.5-flash-lite",
+        "attempts": 1,
+        "error": null,
+        "created_at": "2026-11-08T17:23:43.646600+00:00",
+        "rules": [
+          {
+            "id": "P1",
+            "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: DEFEND when the carrier shows the parcel DELIVERED to the shipping destination, strongest with a buyer signature."
+          },
+          {
+            "id": "P2",
+            "text": "Recommend ACCEPT when the disputed amount is under 15.00 USD and no other dispute shares the checkout device or IP: contesting costs more than the amount."
+          },
+          {
+            "id": "P3",
+            "text": "DEFEND when the checkout device hash or IP is shared with 2 or more other disputes: a repeat pattern across disputes justifies contesting. A pattern is not proof. P3 takes precedence over P2."
+          },
+          {
+            "id": "P4",
+            "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: ACCEPT when there is no carrier scan after the label was created, because there is no proof of shipment or delivery."
+          }
+        ],
+        "trigger": null
+      }
+    },
+    {
+      "dispute_id": "PP-R-WZR-10197157",
+      "archived_at": "2026-11-08T17:48:23.263236+00:00",
+      "replaced_by": null,
+      "record": {
+        "dispute_id": "PP-R-WZR-10197157",
+        "status": "ok",
+        "decision": "DEFEND",
+        "risk_score": 10,
+        "reasoning": [
+          {
+            "point": "The shipment was delivered with a buyer signature and no contradicting facts.",
+            "cites": [
+              "F5",
+              "P1"
+            ]
+          },
+          {
+            "point": "PayPal marks the transaction seller protection eligible.",
+            "cites": [
+              "F4"
+            ]
+          },
+          {
+            "point": "No other dispute shares this checkout's device hash or IP.",
+            "cites": [
+              "F7"
+            ]
+          }
+        ],
+        "evidence_summary": "Shipment and device records cited here are merchant-supplied sandbox test data. Transaction 2TA89366WK946074Y for 27.00 USD is eligible for seller protection. The shipment via UPS with tracking 1ZSEED0000000006 was delivered to Phoenix, AZ on 2026-11-08 and was signed for by the buyer. Therefore, the merchandise was successfully delivered.",
+        "facts": [
+          {
+            "id": "F1",
+            "text": "Dispute PP-R-WZR-10197157: reason MERCHANDISE_OR_SERVICE_NOT_RECEIVED, amount 27.00 USD, stage INQUIRY, status WAITING_FOR_SELLER_RESPONSE, seller response due 2026-11-28T17:13:33.143Z.",
+            "source": "paypal",
+            "ref": "dispute"
+          },
+          {
+            "id": "F2",
+            "text": "Buyer PayPal payer_id sandbox-buyer-1.",
+            "source": "paypal",
+            "ref": "customer"
+          },
+          {
+            "id": "F3",
+            "text": "Transaction 2TA89366WK946074Y created 2026-11-08T17:08:09.000Z for 27.00 USD.",
+            "source": "paypal",
+            "ref": "transaction"
+          },
+          {
+            "id": "F4",
+            "text": "PayPal marks transaction 2TA89366WK946074Y seller_protection_eligible=true (EXPANDED_SELLER_PROTECTION).",
+            "source": "paypal",
+            "ref": "transaction"
+          },
+          {
+            "id": "F5",
+            "text": "Shipment SEED-SHP-WZR via UPS (tracking 1ZSEED0000000006) to Phoenix, AZ, US: status DELIVERED, shipped 2026-11-08T17:10:00Z, delivered 2026-11-08T17:18:00Z, signed by buyer: yes.",
+            "source": "seeded",
+            "ref": "shipment"
+          },
+          {
+            "id": "F6",
+            "text": "Checkout telemetry SEED-TEL-WZR: IP 203.0.113.140 (geolocated Phoenix, AZ, US), device hash dev-b37a40.",
+            "source": "seeded",
+            "ref": "telemetry"
+          },
+          {
+            "id": "F7",
+            "text": "No other dispute shares this checkout's device hash or IP.",
+            "source": "seeded",
+            "ref": "telemetry"
+          }
+        ],
+        "graph_context": {
+          "dispute": {
+            "id": "PP-R-WZR-10197157",
+            "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+            "status": "WAITING_FOR_SELLER_RESPONSE",
+            "stage": "INQUIRY",
+            "amount": 27.0,
+            "currency": "USD",
+            "due": "2026-11-28T17:13:33.143Z",
+            "source": "paypal"
+          },
+          "customer": {
+            "payer_id": "sandbox-buyer-1",
+            "source": "paypal"
+          },
+          "transaction": {
+            "id": "2TA89366WK946074Y",
+            "buyer_transaction_id": "2RX88247D7999650J",
+            "create_time": "2026-11-08T17:08:09.000Z",
+            "amount": 27.0,
+            "currency": "USD",
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION",
+            "source": "paypal"
+          },
+          "shipment": {
+            "id": "SEED-SHP-WZR",
+            "carrier": "UPS",
+            "tracking_id": "1ZSEED0000000006",
+            "status": "DELIVERED",
+            "shipped_at": "2026-11-08T17:10:00Z",
+            "delivered_at": "2026-11-08T17:18:00Z",
+            "last_scan": null,
+            "signed_by_buyer": true,
+            "destination": "Phoenix, AZ, US",
+            "source": "seeded"
+          },
+          "telemetry": {
+            "id": "SEED-TEL-WZR",
+            "ip": "203.0.113.140",
+            "device_hash": "dev-b37a40",
+            "geo": "Phoenix, AZ, US",
+            "source": "seeded"
+          },
+          "linked_disputes": [],
+          "events": []
+        },
+        "model": "gemini/gemini-3.5-flash-lite",
+        "attempts": 1,
+        "error": null,
+        "created_at": "2026-11-08T17:24:02.185584+00:00",
+        "rules": [
+          {
+            "id": "P1",
+            "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: DEFEND when the carrier shows the parcel DELIVERED to the shipping destination, strongest with a buyer signature."
+          },
+          {
+            "id": "P2",
+            "text": "Recommend ACCEPT when the disputed amount is under 15.00 USD and no other dispute shares the checkout device or IP: contesting costs more than the amount."
+          },
+          {
+            "id": "P3",
+            "text": "DEFEND when the checkout device hash or IP is shared with 2 or more other disputes: a repeat pattern across disputes justifies contesting. A pattern is not proof. P3 takes precedence over P2."
+          },
+          {
+            "id": "P4",
+            "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: ACCEPT when there is no carrier scan after the label was created, because there is no proof of shipment or delivery."
+          }
+        ],
+        "trigger": null
+      }
+    },
+    {
+      "dispute_id": "PP-R-YOV-10196864",
+      "archived_at": "2026-11-09T07:13:07.393922+00:00",
+      "replaced_by": "merchant_event:EVT-YOV-SCAN-1",
+      "record": {
+        "dispute_id": "PP-R-YOV-10196864",
+        "status": "ok",
+        "decision": "ACCEPT",
+        "risk_score": 80,
+        "reasoning": [
+          {
+            "point": "The shipment status shows only a label created with no carrier scan since.",
+            "cites": [
+              "F5"
+            ]
+          },
+          {
+            "point": "There is no proof of shipment or delivery when no carrier scan exists.",
+            "cites": [
+              "P4"
+            ]
+          },
+          {
+            "point": "The dispute reason is merchandise or service not received.",
+            "cites": [
+              "F1"
+            ]
+          }
+        ],
+        "evidence_summary": "Shipment and device records cited here are merchant-supplied sandbox test data. We are accepting the dispute for transaction 5GU29781PX414531M regarding dispute PP-R-YOV-10196864 for 50.00 USD, as there is no carrier scan after the label was created.",
+        "facts": [
+          {
+            "id": "F1",
+            "text": "Dispute PP-R-YOV-10196864: reason MERCHANDISE_OR_SERVICE_NOT_RECEIVED, amount 50.00 USD, stage CHARGEBACK, status WAITING_FOR_SELLER_RESPONSE, seller response due 2026-11-17T04:59:59.000Z.",
+            "source": "paypal",
+            "ref": "dispute"
+          },
+          {
+            "id": "F2",
+            "text": "Buyer PayPal payer_id sandbox-buyer-1.",
+            "source": "paypal",
+            "ref": "customer"
+          },
+          {
+            "id": "F3",
+            "text": "Transaction 5GU29781PX414531M created 2026-11-06T16:41:22.000Z for 50.00 USD.",
+            "source": "paypal",
+            "ref": "transaction"
+          },
+          {
+            "id": "F4",
+            "text": "PayPal marks transaction 5GU29781PX414531M seller_protection_eligible=true (EXPANDED_SELLER_PROTECTION).",
+            "source": "paypal",
+            "ref": "transaction"
+          },
+          {
+            "id": "F5",
+            "text": "Shipment SEED-SHP-YOV via USPS (tracking 9400SEED00000002) to Denver, CO, US: status LABEL_CREATED, last carrier scan: Label created 2026-11-06; no carrier scan since.",
+            "source": "seeded",
+            "ref": "shipment"
+          },
+          {
+            "id": "F6",
+            "text": "Checkout telemetry SEED-TEL-YOV: IP 198.51.100.7 (geolocated Denver, CO, US), device hash dev-21c4be.",
+            "source": "seeded",
+            "ref": "telemetry"
+          },
+          {
+            "id": "F7",
+            "text": "No other dispute shares this checkout's device hash or IP.",
+            "source": "seeded",
+            "ref": "telemetry"
+          }
+        ],
+        "graph_context": {
+          "dispute": {
+            "id": "PP-R-YOV-10196864",
+            "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+            "status": "WAITING_FOR_SELLER_RESPONSE",
+            "stage": "CHARGEBACK",
+            "amount": 50.0,
+            "currency": "USD",
+            "due": "2026-11-17T04:59:59.000Z",
+            "source": "paypal"
+          },
+          "customer": {
+            "payer_id": "sandbox-buyer-1",
+            "source": "paypal"
+          },
+          "transaction": {
+            "id": "5GU29781PX414531M",
+            "buyer_transaction_id": "4HR35742VM333374S",
+            "create_time": "2026-11-06T16:41:22.000Z",
+            "amount": 50.0,
+            "currency": "USD",
+            "seller_protection_eligible": true,
+            "seller_protection_type": "EXPANDED_SELLER_PROTECTION",
+            "source": "paypal"
+          },
+          "shipment": {
+            "id": "SEED-SHP-YOV",
+            "carrier": "USPS",
+            "tracking_id": "9400SEED00000002",
+            "status": "LABEL_CREATED",
+            "shipped_at": null,
+            "delivered_at": null,
+            "last_scan": "Label created 2026-11-06; no carrier scan since",
+            "signed_by_buyer": null,
+            "destination": "Denver, CO, US",
+            "source": "seeded"
+          },
+          "telemetry": {
+            "id": "SEED-TEL-YOV",
+            "ip": "198.51.100.7",
+            "device_hash": "dev-21c4be",
+            "geo": "Denver, CO, US",
+            "source": "seeded"
+          },
+          "linked_disputes": []
+        },
+        "model": "gemini/gemini-3.5-flash-lite",
+        "attempts": 1,
+        "error": null,
+        "created_at": "2026-11-07T16:06:35.005743+00:00",
+        "rules": [
+          {
+            "id": "P1",
+            "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: DEFEND when the carrier shows the parcel DELIVERED to the shipping destination, strongest with a buyer signature."
+          },
+          {
+            "id": "P2",
+            "text": "Recommend ACCEPT when the disputed amount is under 15.00 USD and no other dispute shares the checkout device or IP: contesting costs more than the amount."
+          },
+          {
+            "id": "P3",
+            "text": "DEFEND when the checkout device hash or IP is shared with 2 or more other disputes: a repeat pattern across disputes justifies contesting. A pattern is not proof. P3 takes precedence over P2."
+          },
+          {
+            "id": "P4",
+            "text": "For MERCHANDISE_OR_SERVICE_NOT_RECEIVED: ACCEPT when there is no carrier scan after the label was created, because there is no proof of shipment or delivery."
+          }
+        ],
+        "trigger": null
+      }
+    }
+  ],
+  "merchant_events": [
+    {
+      "event_id": "EVT-YOV-SCAN-1",
+      "dispute_id": "PP-R-YOV-10196864",
+      "transaction_id": "5GU29781PX414531M",
+      "data": {
+        "event_id": "EVT-YOV-SCAN-1",
+        "transaction_id": "5GU29781PX414531M",
+        "kind": "carrier_scan",
+        "status": "DELIVERED",
+        "location": "Denver, CO, US",
+        "time": "2026-11-07T19:42:00Z",
+        "carrier": "USPS",
+        "signed_by_buyer": true,
+        "note": "Late carrier scan received after the dispute opened: delivered to the shipping address, signature captured."
+      },
+      "source": "seeded",
+      "label": "simulated merchant event",
+      "received_at": "2026-11-09T07:12:55.756962+00:00"
     }
   ],
   "drafts": [],
@@ -843,6 +2006,17 @@
       "finished_at": "2026-11-07T17:46:07.556879+00:00",
       "http_status": 200,
       "paypal_error": null
+    },
+    {
+      "dispute_id": "PP-R-IQA-10196863",
+      "action": "accept_claim",
+      "state": "succeeded",
+      "text_sha256": "b6443ed0f5691e41639ed0aedd8799752c6b897e8d576ab0b20fbf2516ae696e",
+      "attempts": 1,
+      "started_at": "2026-11-08T12:53:41.764541+00:00",
+      "finished_at": "2026-11-08T12:53:45.646606+00:00",
+      "http_status": 200,
+      "paypal_error": null
     }
   ],
   "verified_behaviours": [
@@ -852,7 +2026,14 @@
       "dispute_id": "PP-R-JTQ-10195324"
     }
   ],
-  "policy_settings": null,
+  "policy_settings": {
+    "defend_delivered_not_received": true,
+    "accept_under_enabled": true,
+    "accept_under_amount": 15.0,
+    "defend_linked_enabled": true,
+    "defend_linked_min": 2,
+    "accept_no_scan_not_received": true
+  },
   "merchant_records": [
     {
       "record_id": "SEED-SHP-JTQ",
@@ -870,7 +2051,7 @@
         "signed_by_buyer": true
       },
       "source": "seeded",
-      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
       "input_file": "merchant_data.json"
     },
     {
@@ -885,7 +2066,7 @@
         "geo": "Austin, TX, US"
       },
       "source": "seeded",
-      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
       "input_file": "merchant_data.json"
     },
     {
@@ -902,7 +2083,7 @@
         "last_scan": "Label created 2026-11-06; no carrier scan since"
       },
       "source": "seeded",
-      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
       "input_file": "merchant_data.json"
     },
     {
@@ -917,7 +2098,7 @@
         "geo": "Denver, CO, US"
       },
       "source": "seeded",
-      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
       "input_file": "merchant_data.json"
     },
     {
@@ -936,7 +2117,7 @@
         "signed_by_buyer": true
       },
       "source": "seeded",
-      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
       "input_file": "merchant_data.json"
     },
     {
@@ -951,7 +2132,7 @@
         "geo": "Miami, FL, US"
       },
       "source": "seeded",
-      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
       "input_file": "merchant_data.json"
     },
     {
@@ -970,7 +2151,7 @@
         "signed_by_buyer": false
       },
       "source": "seeded",
-      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
       "input_file": "merchant_data.json"
     },
     {
@@ -985,7 +2166,75 @@
         "geo": "Portland, OR, US"
       },
       "source": "seeded",
-      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
+      "input_file": "merchant_data.json"
+    },
+    {
+      "record_id": "SEED-SHP-CTG",
+      "kind": "shipment",
+      "dispute_id": "PP-R-CTG-10197156",
+      "transaction_id": "1XJ49513EU1506726",
+      "data": {
+        "id": "SEED-SHP-CTG",
+        "carrier": "USPS",
+        "tracking_id": "9400SEED00000005",
+        "status": "DELIVERED",
+        "destination": "Columbus, OH, US",
+        "shipped_at": "2026-11-08T17:09:14Z",
+        "delivered_at": "2026-11-08T17:10:46Z",
+        "signed_by_buyer": false
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
+      "input_file": "merchant_data.json"
+    },
+    {
+      "record_id": "SEED-TEL-CTG",
+      "kind": "telemetry",
+      "dispute_id": "PP-R-CTG-10197156",
+      "transaction_id": "1XJ49513EU1506726",
+      "data": {
+        "id": "SEED-TEL-CTG",
+        "ip": "198.51.100.61",
+        "device_hash": "dev-6d2e18",
+        "geo": "Columbus, OH, US"
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
+      "input_file": "merchant_data.json"
+    },
+    {
+      "record_id": "SEED-SHP-WZR",
+      "kind": "shipment",
+      "dispute_id": "PP-R-WZR-10197157",
+      "transaction_id": "2TA89366WK946074Y",
+      "data": {
+        "id": "SEED-SHP-WZR",
+        "carrier": "UPS",
+        "tracking_id": "1ZSEED0000000006",
+        "status": "DELIVERED",
+        "destination": "Phoenix, AZ, US",
+        "shipped_at": "2026-11-08T17:09:57Z",
+        "delivered_at": "2026-11-08T17:11:45Z",
+        "signed_by_buyer": true
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
+      "input_file": "merchant_data.json"
+    },
+    {
+      "record_id": "SEED-TEL-WZR",
+      "kind": "telemetry",
+      "dispute_id": "PP-R-WZR-10197157",
+      "transaction_id": "2TA89366WK946074Y",
+      "data": {
+        "id": "SEED-TEL-WZR",
+        "ip": "203.0.113.140",
+        "device_hash": "dev-b37a40",
+        "geo": "Phoenix, AZ, US"
+      },
+      "source": "seeded",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
       "input_file": "merchant_data.json"
     },
     {
@@ -1010,7 +2259,7 @@
         }
       },
       "source": "seeded",
-      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
       "input_file": "merchant_data.json"
     },
     {
@@ -1035,7 +2284,7 @@
         }
       },
       "source": "seeded",
-      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
       "input_file": "merchant_data.json"
     },
     {
@@ -1060,7 +2309,7 @@
         }
       },
       "source": "seeded",
-      "imported_at": "2026-11-08T00:31:55.560297+00:00",
+      "imported_at": "2026-11-08T17:47:51.573223+00:00",
       "input_file": "merchant_data.json"
     }
   ]
