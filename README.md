@@ -63,6 +63,13 @@ inquiry-stage message attachments). They are never analysed by the agent.
 
 Sandbox only. There are no live credentials and no live base URL anywhere in this code.
 
+## Scripts
+
+- **Scratch mode:** `python scripts/scratch.py create` (or `reset`) copies the store to `data/scratch.db` and seeds the graph `disputedesk_scratch`; set `DISPUTEDESK_DB` and `DISPUTEDESK_GRAPH` in the shell (never in `.env`) to use it, and the top bar shows **Scratch data**.
+- **`GET /api/poller`:** read-only, local-only poller status (last poll, disputes returned, new IDs, next poll, errors) behind the top-bar polling chip; demo mode answers "Recorded data, polling disabled".
+- **`python scripts/export_demo.py --exclude <dispute_id>`:** leaves a dispute out of everything in the demo snapshot (repeatable); an unknown ID writes nothing.
+- **`python scripts/probe_attachment.py <dispute_id>`:** one read-only GET of a stored attachment link, after an https `api-m.sandbox.paypal.com` host check and with redirects off; prints only the status, redirect host, content type, byte count and detected file type.
+
 ## Layout
 
 - `disputedesk/auth.py`: OAuth client-credentials token with caching
