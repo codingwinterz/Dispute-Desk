@@ -36,9 +36,9 @@ picks them up within `POLL_SECONDS`.
 
 ### Sandbox limits
 
-- **Detection is by polling.** No `CUSTOMER.DISPUTE.*` webhook has been delivered by the sandbox so
-  far, so the poller (`GET /v1/customer/disputes`) is the primary detector; the webhook receiver stays
-  on as a second source.
+- **Detection is by polling.** No dispute webhook was observed in the sandbox (`CUSTOMER.DISPUTE.*`),
+  so the poller (`GET /v1/customer/disputes`) is the primary detector; the webhook receiver stays on as
+  a second source.
 - **No partial offers at the chargeback stage.** Offers (`make-offer`) are only accepted while a
   dispute is in the inquiry stage; the recorded disputes are all chargebacks, so the choices are to
   provide evidence or accept the claim.
@@ -51,7 +51,7 @@ picks them up within `POLL_SECONDS`.
 | Data | Source |
 |---|---|
 | PayPal disputes (details, stage, status, offers, evidence, sandbox settlement) | **Real**: PayPal sandbox REST API (`https://api-m.sandbox.paypal.com`) |
-| PayPal webhooks (`CUSTOMER.DISPUTE.*`) | **Real**: delivered by the PayPal sandbox and verified with PayPal's verify-webhook-signature API |
+| PayPal webhooks (`CUSTOMER.DISPUTE.*`) | Receiver is real and signature-checked; no dispute webhook was observed in the sandbox. |
 | Customers, transactions, disputes in the graph | **Real** (`source="paypal"`): built from the stored dispute JSON |
 | Shipments, IP / device telemetry, past disputes (`SEED-…`) | **Seeded** (`source="seeded"`): merchant records imported from an input JSON file (the sandbox example is `seed/merchant_data.json`), not from PayPal. In production your store supplies this; in the sandbox it is simulated. |
 | Decisions (DEFEND / ACCEPT) | **Generated** by the LLM from the graph facts and policy rules above |
