@@ -4,6 +4,32 @@ An AI agent that decides whether to defend or settle PayPal disputes.
 The agent recommends; nothing is sent to PayPal until the merchant approves.
 This branch (`sandbox-spike`) only proves that the real PayPal sandbox dispute flow works.
 
+## How it works
+
+1. A customer files a dispute in the PayPal sandbox.
+2. DisputeDesk detects it by polling the Disputes API every 10 seconds, and a signature-checked webhook
+   receiver feeds the same pipeline.
+3. A merchant graph (FalkorDB) turns PayPal's records and the merchant's shipment and device records into
+   numbered facts F1, F2 and so on.
+4. The agent recommends Defend or Accept with a risk score and reasons that cite those facts and the
+   policy rules P1 to P4.
+5. The merchant approves: a dry run shows the exact request, a confirmation names the action and amount,
+   and only then is anything sent to PayPal.
+
+The agent recommends; nothing is sent to PayPal until the merchant approves.
+
+```mermaid
+flowchart LR
+  A["PayPal sandbox<br/>customer files a dispute"] --> B["Poller<br/>checks every 10 s"]
+  W["Webhook receiver<br/>signature-checked"] -.-> B
+  B --> C["Merchant graph (FalkorDB)<br/>PayPal facts + simulated merchant records"]
+  C --> D["Agent (Gemini)<br/>Defend or Accept<br/>cites numbered facts and policy rules"]
+  D --> E["Dashboard<br/>reasons, risk score, draft evidence"]
+  E --> F{"Merchant approves?"}
+  F -- "yes, after confirm" --> G["PayPal Disputes API<br/>provide evidence or accept claim"]
+  F -- no --> H["Nothing is sent"]
+```
+
 ## Quick start: demo mode (no accounts, no keys)
 
 Needs Python 3.12 and git. Demo mode serves recorded sandbox data from `data/demo_snapshot.json`; it
@@ -38,25 +64,31 @@ picks them up within `POLL_SECONDS`.
 
 ### Sandbox limits
 
-- **Detection is by polling.** No dispute webhook was observed in the sandbox (`CUSTOMER.DISPUTE.*`),
-  so the poller (`GET /v1/customer/disputes`) is the primary detector; the webhook receiver stays on as
+- **Detection is by polling.** No dispute webhook was observed in the sandbox (`CUSTOMER.DISPUTE.*`), so
+  the poller (`GET /v1/customer/disputes`) is the primary detector; the webhook receiver stays on as
   a second source.
-- **No partial offers at the chargeback stage.** Offers (`make-offer`) are only accepted while a
-  dispute is in the inquiry stage; the recorded disputes are all chargebacks, so the choices are to
-  provide evidence or accept the claim.
+- **No partial offers.** Offers (`make-offer`) are only accepted while a dispute is in the inquiry stage.
+  Most recorded disputes are at the chargeback stage; two (PP-R-CTG-10197156 and PP-R-WZR-10197157) are
+  at the inquiry stage. Offers are not built, so the choices are to provide evidence or accept the claim.
 - **Disputes are opened by hand.** Creating one through the API needs a scope only a PayPal account
   manager can grant.
 - **Shipments and devices are simulated** (see below); in production your store supplies them.
 
-## What is real vs seeded
+## What is real and what is simulated
 
-| Data | Source |
+| Part | Status |
 |---|---|
-| PayPal disputes (details, stage, status, offers, evidence, sandbox settlement) | **Real**: PayPal sandbox REST API (`https://api-m.sandbox.paypal.com`) |
-| PayPal webhooks (`CUSTOMER.DISPUTE.*`) | Receiver is real and signature-checked; no dispute webhook was observed in the sandbox. |
-| Customers, transactions, disputes in the graph | **Real** (`source="paypal"`): built from the stored dispute JSON |
-| Shipments, IP / device telemetry, past disputes (`SEED-…`) | **Seeded** (`source="seeded"`): merchant records imported from an input JSON file (the sandbox example is `seed/merchant_data.json`), not from PayPal. In production your store supplies this; in the sandbox it is simulated. |
-| Decisions (DEFEND / ACCEPT) | **Generated** by the LLM from the graph facts and policy rules above |
+| Disputes, statuses and deadlines | Real: PayPal sandbox Disputes API |
+| Detection | Real: polling every 10 seconds |
+| Webhook receiver | Built and signature-checked. No dispute webhook was observed in the sandbox |
+| Graph queries, Gemini decision step, policy rules | Real: run live on the data below |
+| Defend | Verified live on one dispute: PayPal accepted the evidence and moved it to UNDER_REVIEW. No outcome observed |
+| Accept | Verified live on one dispute: the buyer was refunded and the dispute reached RESOLVED |
+| Shipment, device, IP and earlier-dispute records | Simulated merchant data, tagged "seeded" |
+| Carrier-scan merchant events | Simulated |
+| Demo snapshot | Recorded and anonymised; it includes one simulated carrier event on the YOV dispute |
+| Buyer attachments | Live mode only, where PayPal provides a download link; never analysed by the agent |
+| Partial offers; reading attachment contents | Not built |
 
 Buyer attachments appear in live mode only, and only where PayPal allows the download (in the sandbox this worked for
 inquiry-stage message attachments). They are never analysed by the agent.
@@ -117,7 +149,7 @@ Logs (raw requests/responses with secrets redacted, plus webhook events) go to `
 
 ## Dispute polling
 
-Polling is the primary detector: no dispute webhook has arrived in the sandbox so far. The webhook
+Polling is the primary detector: no dispute webhook was observed in the sandbox. The webhook
 receiver stays on as a second source.
 
 The receiver app polls `GET /v1/customer/disputes` every `POLL_SECONDS` (default 10) and follows
@@ -187,8 +219,9 @@ poller, the webhook, the analyzer or app startup.
   No file is attached. ACCEPT sends `POST /v1/customer/disputes/{id}/accept-claim` with
   `{"note": "Accepting the claim: full refund to the buyer."}`, which closes the dispute in the buyer's
   favour and refunds the buyer. Sources: PayPal's Use Disputes API guide and the Disputes v1 spec.
-- **UNVERIFIED.** PayPal's docs don't show a notes-only evidence submission (their sample attaches a
-  file). The page says so until the first one succeeds; that success is recorded and the notice goes.
+- **Notes-only evidence.** PayPal's docs don't show a notes-only evidence submission (their sample attaches
+  a file), so the page marks it as unverified until the first one succeeds; that success is recorded and
+  the notice goes.
 - **Dry run.** "Show the exact request" builds the request from stored state, with the token
   redacted, and sends nothing (`GET /api/submissions/{id}/dry-run`).
 - **Confirm.** Approve opens a dialog with the action, dispute ID, amount and the exact text PayPal will
