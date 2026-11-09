@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from disputedesk.analyzer import Analyzer  # noqa: E402
-from disputedesk.config import DISPUTE_DB, load_agent_settings  # noqa: E402
+from disputedesk.config import DISPUTE_DB, load_agent_settings, targets  # noqa: E402
 from disputedesk.decision_store import DecisionStore  # noqa: E402
 from disputedesk.dispute_store import DisputeStore  # noqa: E402
 from disputedesk.graph import GraphStore, connect, context_to_facts  # noqa: E402
@@ -23,6 +23,12 @@ from disputedesk.policies import PolicyStore  # noqa: E402
 
 
 GRAPH_FIX = "      Fix: docker compose up -d falkordb   then   python scripts/seed_graph.py"
+
+
+def store_path() -> Path:
+    """The scratch copy in scratch mode (DISPUTEDESK_DB + DISPUTEDESK_GRAPH), else the real store."""
+    t = targets()
+    return t.db if t.scratch else DISPUTE_DB
 
 
 def hint(status: str) -> str:
@@ -52,8 +58,11 @@ def main() -> int:
     args = parser.parse_args()
 
     agent = load_agent_settings()
-    disputes, decisions = DisputeStore(DISPUTE_DB), DecisionStore(DISPUTE_DB)
-    policies = PolicyStore(DISPUTE_DB)  # the merchant's saved policy rules (defaults if never saved)
+    db = store_path()
+    if targets().scratch:
+        print(f"scratch mode: database {db.name}, graph {agent.graph_name}")
+    disputes, decisions = DisputeStore(db), DecisionStore(db)
+    policies = PolicyStore(db)  # the merchant's saved policy rules (defaults if never saved)
     analyzer = Analyzer(disputes, decisions, lambda: GraphStore(connect(agent)), agent.llm_model,
                         rules_provider=policies.rules)
     ids = sorted(disputes.full_disputes()) if args.all else [args.dispute_id]

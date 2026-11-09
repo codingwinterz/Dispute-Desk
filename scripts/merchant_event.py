@@ -3,7 +3,8 @@
     python scripts/merchant_event.py --file seed/events/yov_delivery_scan.json
     python scripts/merchant_event.py --file my_event.json --no-analyze   (write the event, decide later)
 
-The event names a transaction. Its dispute is found in the stored PayPal disputes (data/disputedesk.db);
+The event names a transaction. Its dispute is found in the stored PayPal disputes (data/disputedesk.db, or
+the scratch copy when DISPUTEDESK_DB and DISPUTEDESK_GRAPH are set; see scripts/scratch.py);
 an unknown transaction is rejected and nothing is written. The event goes into the FalkorDB graph as
 source "seeded", labelled "simulated merchant event", and is kept for the case page's timeline. The
 dispute is then decided again with the existing analyzer: the new decision is stored and the one it
@@ -18,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from disputedesk.analyzer import Analyzer  # noqa: E402
-from disputedesk.config import DISPUTE_DB, load_agent_settings  # noqa: E402
+from disputedesk.config import DISPUTE_DB, load_agent_settings, targets  # noqa: E402
 from disputedesk.decision_store import DecisionStore  # noqa: E402
 from disputedesk.dispute_store import DisputeStore  # noqa: E402
 from disputedesk.graph import GraphStore, connect  # noqa: E402
@@ -29,6 +30,12 @@ from disputedesk.policies import PolicyStore  # noqa: E402
 GRAPH_FIX = "      Fix: docker compose up -d falkordb   then run this command again"
 
 
+def store_path() -> Path:
+    """The scratch copy in scratch mode (DISPUTEDESK_DB + DISPUTEDESK_GRAPH), else the real store."""
+    t = targets()
+    return t.db if t.scratch else DISPUTE_DB
+
+
 def describe(rec: dict | None) -> str:
     if not rec:
         return "no decision"
@@ -37,7 +44,7 @@ def describe(rec: dict | None) -> str:
     return f"{rec['decision']} (risk {rec['risk_score']})"
 
 
-def main(argv: list[str] | None = None, graph_factory=None, decide_fn=None, db_path: Path = DISPUTE_DB,
+def main(argv: list[str] | None = None, graph_factory=None, decide_fn=None, db_path: Path | None = None,
          model: str | None = None) -> int:
     """CLI entry point. Tests (and dry runs on a copy) pass their own graph, decision step, database and model."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -53,6 +60,10 @@ def main(argv: list[str] | None = None, graph_factory=None, decide_fn=None, db_p
             print(f"      {problem}")
         return 1
 
+    if db_path is None:
+        db_path = store_path()
+        if db_path != DISPUTE_DB:
+            print(f"scratch mode: database {db_path.name}, graph {targets().graph}")
     disputes, decisions, events = DisputeStore(db_path), DecisionStore(db_path), MerchantEventStore(db_path)
     policies = PolicyStore(db_path)
     try:
