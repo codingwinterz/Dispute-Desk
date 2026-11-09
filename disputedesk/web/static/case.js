@@ -18,6 +18,7 @@
   let graph3d = null;        // live three.js view; disposed before every re-render and on leaving
   let pendingGraph = null;   // a 3D view to mount once its container is in the page
   const MAX_DRAFT = 2000;    // matches the server's cap (disputedesk/drafts.py)
+  const RECORDED_EVENT = "recorded, simulated merchant event";  // demo mode: replayed from the snapshot
 
   function svg(tag, attrs = {}, ...children) {
     const node = document.createElementNS(SVG, tag);
@@ -496,7 +497,8 @@
       // Earlier decisions (kept when the agent re-decided), then the current one.
       ...caseHistory.map((h) => [h.created_at, h.status === "ok" ? `Analyzed by the agent: ${outcome(h)}` : "Analysis failed",
                                   h.status === "ok" ? "" : "failed"]),
-      ...caseEvents.map((e) => [e.received_at, `Merchant event received: ${String(e.status).toLowerCase().replaceAll("_", " ")} scan (simulated)`, "event"]),
+      ...caseEvents.map((e) => [e.received_at, `Merchant event received: ${String(e.status).toLowerCase().replaceAll("_", " ")} scan `
+        + (DD.mode.demo ? `(${RECORDED_EVENT})` : "(simulated)"), "event"]),
       [rec && rec.created_at, rec ? (rec.status === "ok"
         ? (afterEvent ? `Re-analyzed after the merchant event: ${outcome(rec)}` : `Analyzed by the agent: ${outcome(rec)}`)
         : "Analysis failed") : "", rec && rec.status !== "ok" ? "failed" : ""],
@@ -533,7 +535,8 @@
       el("div", { class: "vc-row" }, side("Before the event", prev), el("span", { class: "vc-arrow", "aria-hidden": "true", text: "→" }), side("After", rec)),
       el("p", { class: "vc-event" },
         `${ev.event_id}: ${ev.carrier ? `${ev.carrier} ` : ""}carrier scan, ${String(ev.status).toLowerCase().replaceAll("_", " ")} at ${ev.location}, ${when}. `,
-        DD.sourceTag(ev.source), ` Simulated merchant event. ${ev.note_production}`));
+        DD.sourceTag(ev.source), DD.mode.demo ? ` Recorded, simulated merchant event (demo data). ${ev.note_production}`
+          : ` Simulated merchant event. ${ev.note_production}`));
   }
 
   function disposeGraph() {
