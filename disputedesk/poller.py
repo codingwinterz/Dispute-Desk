@@ -9,12 +9,21 @@ data and emit dispute_updated. Unchanged disputes cost no extra request.
 
 Only DisputesClient.list_disputes and get_dispute are called; never a mutating endpoint.
 Both build their URL from Settings.base_url, which only accepts the sandbox base URL.
+
+status() reports what the last polls observed (for GET /api/poller). It only reads counters that
+poll_once records; it never triggers a request.
 """
 
 import asyncio
 import json
 import logging
+import re
+import threading
+import time
+from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -47,6 +56,31 @@ def changed_fields(item: dict, stored: dict) -> list[str]:
     return changed
 
 
+MAX_ERROR_CHARS = 200
+# Token-shaped text that must never reach the status endpoint, whatever an exception message holds.
+_SECRET_PATTERNS = (
+    re.compile(r"(?i)\bbearer\s+\S+"),
+    re.compile(r"(?i)\bbasic\s+[A-Za-z0-9+/=]{8,}"),
+    re.compile(r"\bA21AA[\w.-]+"),  # PayPal access tokens
+    re.compile(r"(?i)\b(access_token|refresh_token|client_secret|client_id|password|api_key|key|token|secret)=[^\s&]+"),
+    re.compile(r"\?\S*"),  # query strings of any URL
+)
+
+
+def redact_error(text: str, secrets: tuple[str, ...] = ()) -> str:
+    """Error text safe to show in the dashboard: known secrets and token-shaped values removed, truncated."""
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, "[REDACTED]")
+    for pattern in _SECRET_PATTERNS:
+        text = pattern.sub("[REDACTED]", text)
+    return text[:MAX_ERROR_CHARS]
+
+
+def _iso(ts: float | None) -> str | None:
+    return datetime.fromtimestamp(ts, timezone.utc).isoformat() if ts is not None else None
+
+
 def _retryable(status: int) -> bool:
     return status == 429 or status >= 500
 
@@ -69,6 +103,8 @@ class DisputePoller:
         disputes_dir: Path,
         interval: float,
         max_backoff: float = MAX_BACKOFF_SECONDS,
+        clock: Callable[[], float] = time.time,
+        secrets: tuple[str, ...] = (),
     ):
         self._client = client
         self._store = store
@@ -77,6 +113,17 @@ class DisputePoller:
         self._interval = interval
         self._max_backoff = max_backoff
         self._failures = 0
+        # Observed state for status(); written by the poll thread, read by the API under the lock.
+        self._clock = clock
+        self._secrets = secrets
+        self._status_lock = threading.Lock()
+        self._last_poll_at: float | None = None
+        self._last_success_at: float | None = None
+        self._next_poll_at: float | None = None
+        self._disputes_returned: int | None = None
+        self._new_ids: list[str] = []
+        self._last_error: str | None = None
+        self._last_error_at: float | None = None
 
     def poll_once(self) -> float:
         """Run one poll. Never raises. Returns the seconds to wait before the next poll."""
@@ -84,14 +131,43 @@ class DisputePoller:
             self._poll()
         except httpx.HTTPStatusError as exc:
             retry_after = _retry_after(exc.response) if exc.response.status_code == 429 else None
-            return self._backoff(f"HTTP {exc.response.status_code}", retry_after)
+            delay = self._backoff(f"HTTP {exc.response.status_code}", retry_after)
         except httpx.HTTPError as exc:
             # Only the exception type is logged: messages can carry URLs, never headers, but keep it minimal.
-            return self._backoff(type(exc).__name__)
+            delay = self._backoff(type(exc).__name__)
         except Exception as exc:
-            return self._backoff(f"unexpected {type(exc).__name__}")
-        self._failures = 0
-        return self._interval
+            delay = self._backoff(f"unexpected {type(exc).__name__}")
+        else:
+            self._failures = 0
+            delay = self._interval
+        now = self._clock()
+        with self._status_lock:
+            self._last_poll_at = now
+            if not self._failures:
+                self._last_success_at = now
+            self._next_poll_at = now + delay
+        return delay
+
+    def status(self) -> dict[str, Any]:
+        """What the poller last observed. Reads recorded values only; makes no request."""
+        with self._status_lock:
+            now = self._clock()
+            failing = self._failures > 0
+            return {
+                "state": "error" if failing else "ok" if self._last_poll_at is not None else "starting",
+                "demo": False,
+                "polling": True,
+                "interval_seconds": self._interval,
+                "last_poll_at": _iso(self._last_poll_at),
+                "seconds_since_last_poll": None if self._last_poll_at is None else round(max(0.0, now - self._last_poll_at), 1),
+                "last_success_at": _iso(self._last_success_at),
+                "disputes_returned": self._disputes_returned,
+                "new_ids": list(self._new_ids),
+                "next_poll_in_seconds": None if self._next_poll_at is None else round(max(0.0, self._next_poll_at - now), 1),
+                "consecutive_errors": self._failures,
+                "last_error": self._last_error,
+                "last_error_at": _iso(self._last_error_at),
+            }
 
     def _poll(self) -> None:
         # 401 is handled inside DisputesClient._request: token invalidated and the call retried once.
@@ -114,6 +190,9 @@ class DisputePoller:
             if fields:
                 refresh.append((i, fields))
         log.info("poll ok count=%d new=%d changed=%d", len(items), len(new_ids), len(refresh))
+        with self._status_lock:  # observation only; detection above is unchanged
+            self._disputes_returned = len(ids)
+            self._new_ids = list(new_ids)
         for dispute_id in new_ids:
             self._process_new(dispute_id)
         for dispute_id in backfill:
@@ -170,6 +249,9 @@ class DisputePoller:
 
     def _backoff(self, reason: str, retry_after: float | None = None) -> float:
         self._failures += 1
+        with self._status_lock:
+            self._last_error = redact_error(reason, self._secrets)
+            self._last_error_at = self._clock()
         delay = min(self._interval * 2 ** self._failures, self._max_backoff)
         if retry_after is not None:
             delay = max(delay, min(retry_after, self._max_backoff))

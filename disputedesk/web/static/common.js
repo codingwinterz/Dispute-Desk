@@ -36,6 +36,8 @@ const DD = (() => {
     const topbar = el("header", { class: "topbar" },
       el("span", { class: "topbar-title", text: title || PAGES[current] || "DisputeDesk" }),
       el("div", { class: "topbar-status" }, live,
+        // Poller status from GET /api/poller; text set by renderPollChip(). Not aria-live: it ticks every second.
+        el("span", { class: "poll-chip num", id: "poll-chip", text: "Polling status loading" }),
         el("span", { class: "env", title: "Every call goes to api-m.sandbox.paypal.com; there are no live credentials.", text: "PayPal sandbox" })));
     document.body.classList.add("shell");
     // Keyboard users can jump past the sidebar to the page content.
@@ -43,7 +45,14 @@ const DD = (() => {
     if (main) { main.id = main.id || "content"; main.tabIndex = -1; }
     const skip = el("a", { class: "skip-link", href: `#${main ? main.id : "content"}`, text: "Skip to content" });
     document.body.prepend(skip, sidebar, topbar);
+    startPollStatus();
     modeReady.then((m) => {
+      if (m.scratch) {
+        // Scratch mode: a rehearsal copy of the store and graph. Real PayPal sandbox, not the real local store.
+        topbar.querySelector(".topbar-status").prepend(el("span", { class: "scratch-badge",
+          title: `Scratch copy: database ${m.scratch_db}, graph ${m.scratch_graph}. The real local store and graph are not touched.`, text: "Scratch data" }));
+        document.body.classList.add("is-scratch");
+      }
       if (!m.demo) return;
       const recorded = m.recorded_at ? new Date(m.recorded_at).toLocaleString() : "an earlier session";
       topbar.querySelector(".topbar-status").prepend(el("span", { class: "demo-badge", title: `Recorded sandbox data from ${recorded}. Nothing is sent to PayPal.`, text: "Demo data" }));
@@ -59,7 +68,7 @@ const DD = (() => {
     .then((r) => (r.ok ? r.json() : { demo: false }))
     .catch(() => ({ demo: false }));
   const mode = { demo: false };
-  modeReady.then((m) => { mode.demo = Boolean(m.demo); mode.recorded_at = m.recorded_at; });
+  modeReady.then((m) => { mode.demo = Boolean(m.demo); mode.recorded_at = m.recorded_at; mode.scratch = Boolean(m.scratch); });
 
   // Live indicator: pages report each request to the local server. "Live" (pulsing) only while the
   // last request succeeded; "Offline" (red, still) after a failure. Shows how long ago it last answered.
@@ -83,6 +92,80 @@ const DD = (() => {
     for (const node of document.querySelectorAll("#live .live-age, [data-live-age]")) {
       if (node.textContent !== text) node.textContent = text;
     }
+  }
+
+  // ---- poller status chip (GET /api/poller, read-only) --------------------------------------
+  // One fetch every POLL_STATUS_MS; the chip's "Last 3s ago" ticks locally between fetches, counted
+  // from the server's own seconds_since_last_poll so the two clocks are never compared.
+  const POLL_STATUS_MS = 5000;
+  let pollStatus = null;      // last /api/poller body, or { state: "unknown" } after a failed fetch
+  let pollFetchedAt = 0;      // Date.now() when pollStatus arrived
+  const secs = (n) => `${+Number(n).toFixed(1)}s`;
+  const agoText = (s) => (s < 120 ? `${Math.round(s)}s ago` : `${Math.round(s / 60)} min ago`);
+  /** Chip wording and tone for a /api/poller body, `elapsedMs` after it was fetched. Pure, for tests. */
+  function pollChipText(s, elapsedMs = 0, now = clock()) {
+    const gone = Math.max(0, elapsedMs) / 1000;
+    if (!s || s.state === "unknown") return { text: "Polling status unknown", tone: "", title: "The local server did not answer GET /api/poller." };
+    if (s.state === "recorded") {
+      const when = new Date(now).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      return { text: "Recorded data", tone: "recorded", title: `Recorded sandbox data as of ${when}. Polling is disabled; nothing is fetched from PayPal.` };
+    }
+    if (s.state === "off") return { text: "Polling off", tone: "", title: s.message || "" };
+    if (s.state === "error") {
+      const wait = s.next_poll_in_seconds;
+      const next = wait === null || wait === undefined ? "" : ` Retry in ${Math.ceil(Math.max(0, wait - gone))}s.`;
+      const n = s.consecutive_errors;
+      return { text: `Polling failing: ${n} error${n === 1 ? "" : "s"} in a row.${next}`, tone: "error",
+               title: `Last error: ${s.last_error || "unknown"}. The poller backs off and retries on its own.` };
+    }
+    if (s.state === "starting" || s.seconds_since_last_poll === null || s.seconds_since_last_poll === undefined) {
+      return { text: `Polling every ${secs(s.interval_seconds)}. First poll running.`, tone: "", title: "" };
+    }
+    const count = s.disputes_returned;
+    const fresh = (s.new_ids || []).length;
+    const disputes = count === null || count === undefined ? "" : ` ${count} dispute${count === 1 ? "" : "s"}${fresh ? `, ${fresh} new` : ""}.`;
+    return { text: `Polling every ${secs(s.interval_seconds)}. Last ${agoText(s.seconds_since_last_poll + gone)}.${disputes}`, tone: "",
+             title: fresh ? `New on the last poll: ${s.new_ids.join(", ")}` : "Read-only GET /v1/customer/disputes against the PayPal sandbox." };
+  }
+  function renderPollChip() {
+    const node = document.getElementById("poll-chip");
+    if (!node || !pollStatus) return;
+    const c = pollChipText(pollStatus, Date.now() - pollFetchedAt);
+    if (node.textContent !== c.text) node.textContent = c.text;
+    if (node.title !== c.title) node.title = c.title;
+    node.classList.toggle("is-failing", c.tone === "error");
+    node.classList.toggle("error-text", c.tone === "error");  // the shared red text class: errors only
+    node.classList.toggle("is-recorded", c.tone === "recorded");
+  }
+  async function fetchPollStatus() {
+    try {
+      const r = await fetch("/api/poller", { cache: "no-store" });
+      pollStatus = r.ok ? await r.json() : { state: "unknown" };
+    } catch {
+      pollStatus = { state: "unknown" };
+    }
+    pollFetchedAt = Date.now();
+    renderPollChip();
+    return pollStatus;
+  }
+  // Only pages with the top bar fetch; demo mode answers once ("recorded") and is not asked again.
+  function startPollStatus() {
+    fetchPollStatus().then((s) => {
+      if (s.state === "recorded") return;
+      setInterval(() => { if (!document.hidden) fetchPollStatus(); }, POLL_STATUS_MS);
+    });
+  }
+
+  // When the app first saw a dispute, relative to PayPal's create_time. "" when either time is missing,
+  // the order is reversed, or the gap is over 10 minutes (the sandbox can list a new dispute late, and
+  // a dispute already open when the app started was not detected live). Pure, for tests.
+  const DETECTION_MAX_S = 600;
+  function detectionText(createIso, detectedIso, via) {
+    const gap = (Date.parse(detectedIso) - Date.parse(createIso)) / 1000;
+    if (!Number.isFinite(gap) || gap < 0 || gap > DETECTION_MAX_S) return "";
+    const s = Math.round(gap);
+    const span = s < 120 ? `${s} second${s === 1 ? "" : "s"}` : `${Math.floor(s / 60)} min ${s % 60} s`;
+    return `Detected ${span} after PayPal created it, via ${via === "webhook" ? "webhook" : "poll"}`;
   }
 
   // ---- the agent's main reason (read-only, cached) -----------------------------------------
@@ -215,6 +298,10 @@ const DD = (() => {
   // stat chips. Pages own their headline and sentence; these helpers build the eyebrow and the chips.
   function eyebrow(section) {
     const source = mode.demo ? `recorded sandbox data, ${recordedLabel().split(",")[0]}` : "live from the PayPal sandbox";
+    return eyebrowWith(section, source);
+  }
+  // The same eyebrow with a page's own source wording (e.g. Merchant records, which are simulated).
+  function eyebrowWith(section, source) {
     return [el("span", {}, section, el("span", { class: "sep", text: "." }), source)];  // one item beside the rule
   }
   /** One stat chip. value: string or node; note: optional string or node; tone: "" | "waiting" | "overdue". */
@@ -316,6 +403,7 @@ const DD = (() => {
   // Any element with data-due shows a live countdown; one ticker updates them all.
   function tick() {
     updateAge();
+    renderPollChip();
     if (document.hidden) return;  // nothing to update while the tab is in the background
     const now = clock();
     for (const node of document.querySelectorAll("[data-due]")) {
@@ -383,6 +471,6 @@ const DD = (() => {
       el("span", { text: String(score) }), bar);
   }
 
-  return { el, color, rgba, colorNum, dueSoonChip, isOverdue, revealStaggered, eyebrow, statChip, sumAmounts, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, groupDisputes, deadlineNode, statusBadge, STATUS_HELP, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
-           dueDate, sourceTag, decisionChip, riskNode, tick };
+  return { el, color, rgba, colorNum, dueSoonChip, isOverdue, revealStaggered, eyebrow, eyebrowWith, statChip, sumAmounts, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, groupDisputes, deadlineNode, statusBadge, STATUS_HELP, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
+           dueDate, sourceTag, decisionChip, riskNode, tick, pollChipText, detectionText };
 })();

@@ -1,10 +1,11 @@
 import json
+from pathlib import Path
 
 import pytest
 
 from disputedesk.dispute_store import DisputeStore
 from disputedesk.graph import GraphStore
-from disputedesk.seed import load_seed, seed_graph
+from disputedesk.seed import load_seed, seed_graph, shipment_timing_problems
 from tests.fakes import FakeGraph, sample_dispute
 
 REAL = {
@@ -45,10 +46,53 @@ def test_ctg_and_wzr_records_match_their_scenarios(data):
     assert wzr["shipment"]["status"] == "DELIVERED" and wzr["shipment"]["signed_by_buyer"] is True
     for dispute_id in ("PP-R-CTG-10197156", "PP-R-WZR-10197157"):
         assert d[dispute_id]["telemetry"] and linked_count(data, dispute_id) == 0  # a device record, no links
-    # Full timestamps: the sandbox transactions were created minutes before the import (17:07:43Z, 17:08:09Z),
-    # so a bare date would mean midnight, before the transaction.
-    assert ctg["shipment"]["shipped_at"] == "2026-11-08T17:09:00Z" and ctg["shipment"]["delivered_at"] == "2026-11-08T17:16:00Z"
-    assert wzr["shipment"]["shipped_at"] == "2026-11-08T17:10:00Z" and wzr["shipment"]["delivered_at"] == "2026-11-08T17:18:00Z"
+
+
+# --- seed validation: shipments sit between the transaction and the dispute being opened ----------
+
+TIMES = json.loads((Path(__file__).resolve().parent / "fixtures" / "seed_dispute_times.json").read_text(encoding="utf-8"))["disputes"]
+# Older sandbox records seeded before this rule existed: their shipments are dated after the dispute was
+# opened. They are kept unchanged on purpose and named here, so any NEW seeded dispute is still checked.
+EXEMPT_LEGACY = {"PP-R-JTQ-10195324", "PP-R-QQW-10196399", "PP-R-IQA-10196863"}
+
+
+def test_every_seeded_shipment_is_dated_between_its_transaction_and_its_dispute(data):
+    assert set(TIMES) == set(data["disputes"])  # every seeded dispute has its stored times on file
+    problems = []
+    for dispute_id, ctx in data["disputes"].items():
+        if dispute_id in EXEMPT_LEGACY:
+            continue
+        t = TIMES[dispute_id]
+        problems += shipment_timing_problems(dispute_id, t["transaction_created"], t["dispute_created"], ctx.get("shipment"))
+    assert problems == []
+
+
+def test_the_exemptions_are_only_the_three_legacy_records(data):
+    # if one of them is ever corrected, drop it from EXEMPT_LEGACY so the rule covers it again
+    for dispute_id in EXEMPT_LEGACY:
+        t = TIMES[dispute_id]
+        assert shipment_timing_problems(dispute_id, t["transaction_created"], t["dispute_created"], data["disputes"][dispute_id].get("shipment"))
+
+
+def test_the_times_fixture_matches_the_recorded_disputes():
+    snapshot = json.loads((Path(__file__).resolve().parent.parent / "data" / "demo_snapshot.json").read_text(encoding="utf-8"))
+    for row in snapshot["disputes"]:
+        d = row["data"]
+        if row["dispute_id"] in TIMES:
+            assert TIMES[row["dispute_id"]] == {"transaction_created": min(x["create_time"] for x in d["disputed_transactions"]),
+                                                "dispute_created": d["create_time"]}, row["dispute_id"]
+
+
+def test_timing_check_catches_each_kind_of_mistake():
+    txn, opened = "2026-11-08T17:07:43.000Z", "2026-11-08T17:12:18.485Z"
+    ok = {"shipped_at": "2026-11-08T17:09:14Z", "delivered_at": "2026-11-08T17:10:46Z"}
+    assert shipment_timing_problems("D", txn, opened, ok) == []
+    late = shipment_timing_problems("D", txn, opened, ok | {"delivered_at": "2026-11-08T17:16:00Z"})
+    assert len(late) == 1 and "delivered_at" in late[0] and "after the dispute was opened" in late[0]
+    early = shipment_timing_problems("D", txn, opened, ok | {"shipped_at": "2026-11-08T17:00:00Z"})
+    assert len(early) == 1 and "before the transaction" in early[0]
+    assert shipment_timing_problems("D", txn, opened, {"shipped_at": "2026-11-09"})  # a later day, date only
+    assert shipment_timing_problems("D", txn, opened, None) == []
 
 
 def test_scenarios_differ(data):

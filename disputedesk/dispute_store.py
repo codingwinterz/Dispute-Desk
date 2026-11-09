@@ -35,6 +35,8 @@ def summarize(dispute_id: str, source: str, detected_at: str, data: dict[str, An
         "reason": data.get("reason"),
         "amount": data.get("dispute_amount"),
         "seller_response_due_date": data.get("seller_response_due_date"),
+        # When PayPal created the dispute; the case timeline compares it with detected_at.
+        "create_time": data.get("create_time"),
         # Every dispute record comes from PayPal; detected_via says which path saw it first.
         "source": "paypal",
         "detected_via": source,

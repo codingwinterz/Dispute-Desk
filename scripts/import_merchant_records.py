@@ -16,9 +16,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from disputedesk.config import DISPUTE_DB, load_agent_settings  # noqa: E402
+from disputedesk.config import DISPUTE_DB, load_agent_settings, targets  # noqa: E402
 from disputedesk.dispute_store import DisputeStore  # noqa: E402
 from disputedesk.merchant_records import MerchantRecordStore, RecordsError, import_records, parse_file  # noqa: E402
+
+
+def store_path() -> Path:
+    """The scratch copy in scratch mode (DISPUTEDESK_DB + DISPUTEDESK_GRAPH), else the real store."""
+    t = targets()
+    return t.db if t.scratch else DISPUTE_DB
 
 
 def main() -> int:
@@ -36,8 +42,9 @@ def main() -> int:
         print("      Fix: correct the file (see seed/merchant_data.json for the expected shape) and run again.")
         return 1
 
-    disputes = DisputeStore(DISPUTE_DB)
-    records = MerchantRecordStore(DISPUTE_DB)
+    db = store_path()
+    disputes = DisputeStore(db)
+    records = MerchantRecordStore(db)
     try:
         stored = disputes.full_disputes()
         rows, report = import_records(parsed, stored, args.file.name)

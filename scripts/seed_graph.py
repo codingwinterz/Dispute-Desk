@@ -13,10 +13,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from disputedesk.config import DISPUTE_DB, load_agent_settings  # noqa: E402
+from disputedesk.config import DISPUTE_DB, load_agent_settings, targets  # noqa: E402
 from disputedesk.dispute_store import DisputeStore  # noqa: E402
 from disputedesk.graph import GraphStore, connect  # noqa: E402
 from disputedesk.seed import load_seed, seed_graph  # noqa: E402
+
+
+def store_path() -> Path:
+    """The scratch copy in scratch mode (DISPUTEDESK_DB + DISPUTEDESK_GRAPH), else the real store."""
+    t = targets()
+    return t.db if t.scratch else DISPUTE_DB
 
 
 def main() -> int:
@@ -26,7 +32,7 @@ def main() -> int:
     args = parser.parse_args()
 
     settings = load_agent_settings()
-    store = DisputeStore(DISPUTE_DB)
+    store = DisputeStore(store_path())
     try:
         graph = GraphStore(connect(settings))
         if args.reset:

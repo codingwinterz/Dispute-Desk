@@ -76,14 +76,14 @@
       }
     },
     "PP-R-CTG-10197156": {
-      "scenario": "Not as described, small amount. Delivered, but nobody signed; the checkout device is not shared with any other dispute. Times are minutes apart because the sandbox transaction was created minutes before the import.",
+      "scenario": "Not as described, small amount. Delivered, but nobody signed; the checkout device is not shared with any other dispute. Times sit between the transaction and the moment the dispute was opened (minutes apart in the sandbox).",
       "shipment": {
         "id": "SEED-SHP-CTG",
         "carrier": "USPS",
         "tracking_id": "9400SEED00000005",
         "status": "DELIVERED",
-        "shipped_at": "2026-11-08T17:09:00Z",
-        "delivered_at": "2026-11-08T17:16:00Z",
+        "shipped_at": "2026-11-08T17:09:14Z",
+        "delivered_at": "2026-11-08T17:10:46Z",
         "signed_by_buyer": false,
         "destination": "Columbus, OH, US"
       },
@@ -95,14 +95,14 @@
       }
     },
     "PP-R-WZR-10197157": {
-      "scenario": "Not received, but the carrier confirms a signed delivery; the checkout device is not shared with any other dispute. Times are minutes apart because the sandbox transaction was created minutes before the import.",
+      "scenario": "Not received, but the carrier confirms a signed delivery; the checkout device is not shared with any other dispute. Times sit between the transaction and the moment the dispute was opened (minutes apart in the sandbox).",
       "shipment": {
         "id": "SEED-SHP-WZR",
         "carrier": "UPS",
         "tracking_id": "1ZSEED0000000006",
         "status": "DELIVERED",
-        "shipped_at": "2026-11-08T17:10:00Z",
-        "delivered_at": "2026-11-08T17:18:00Z",
+        "shipped_at": "2026-11-08T17:09:57Z",
+        "delivered_at": "2026-11-08T17:11:45Z",
         "signed_by_buyer": true,
         "destination": "Phoenix, AZ, US"
       },

@@ -307,3 +307,10 @@ def test_every_page_counts_waiting_and_with_paypal_with_one_definition():
     for name in ("overview.js", "queue.js", "insights.js", "casemap.js"):
         assert "DD.groupDisputes(" in (STATIC / name).read_text(encoding="utf-8"), name
     assert 'waiting: pick("WAITING_FOR_SELLER_RESPONSE"), withPayPal: pick("UNDER_REVIEW")' in COMMON
+
+
+def test_merchant_records_eyebrow_says_the_records_are_simulated():
+    records = (STATIC / "merchant_records.js").read_text(encoding="utf-8")
+    assert 'DD.mode.demo ? "recorded, simulated merchant records" : "simulated merchant records"' in records
+    assert 'DD.eyebrow("Merchant records")' not in records  # not the PayPal-sandbox wording
+    assert "function eyebrowWith(section, source)" in COMMON and "await DD.modeReady;" in records  # mode known first
