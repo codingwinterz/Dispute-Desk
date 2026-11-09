@@ -13,6 +13,11 @@ a token-like string is still present; it reports only which check failed, never 
 The decision history and the simulated merchant events are exported too, so demo mode shows the
 before-and-after verdict and the timeline exactly as recorded.
 
+export_snapshot(..., exclude=[...]) leaves disputes out entirely: their rows in every table (dispute,
+decision, history, events, drafts, submissions, verified behaviours, merchant records) are dropped,
+and any mention of their dispute or transaction IDs elsewhere (another dispute's linked-dispute fact,
+graph snapshot or reasoning) is replaced with a placeholder. scan() then fails if an excluded ID remains.
+
 load_snapshot() writes a snapshot into a fresh SQLite file so the existing stores and routes serve it.
 """
 
@@ -42,6 +47,21 @@ PAYER_FACT = re.compile(r"payer_id\s+([A-Za-z0-9_-]+)")
 # Merchant-supplied test IDs (seed/merchant_data.json), labelled seeded: not PayPal identifiers.
 SEEDED_ID_PREFIX = "SEED-"
 _DECISION_JSON = ("reasoning", "facts", "graph_context", "rules")
+EXCLUDED_DISPUTE = "[excluded dispute]"
+EXCLUDED_TRANSACTION = "[excluded transaction]"
+
+
+class UnknownDisputes(ValueError):
+    """--exclude named a dispute that is not in the store (a typo would otherwise export it)."""
+
+    def __init__(self, ids: list[str]):
+        super().__init__(f"not in the local store: {', '.join(ids)}")
+        self.ids = ids
+
+
+def _transaction_ids(data: dict[str, Any]) -> set[str]:
+    return {str(t[k]) for t in data.get("disputed_transactions") or [] if isinstance(t, dict)
+            for k in ("seller_transaction_id", "buyer_transaction_id") if t.get(k)}
 SECRET_PATTERNS = {
     "paypal_access_token": re.compile(r"A21AA[A-Za-z0-9_-]{20,}"),
     "bearer_token": re.compile(r"Bearer\s+(?!\[REDACTED\])[A-Za-z0-9._-]{12,}"),
@@ -129,27 +149,39 @@ def _json_cols(row: dict[str, Any], cols: tuple[str, ...]) -> dict[str, Any]:
     return {k: (json.loads(v) if k in cols and isinstance(v, str) and v else v) for k, v in row.items()}
 
 
-def export_snapshot(db_path: Path) -> tuple[dict[str, Any], dict[str, str]]:
-    """Build the snapshot from the local store. Returns (snapshot, identifier mapping used)."""
+def export_snapshot(db_path: Path, exclude: list[str] | tuple[str, ...] = ()) -> tuple[dict[str, Any], dict[str, str]]:
+    """Build the snapshot from the local store. Returns (snapshot, identifier mapping used).
+    `exclude`: dispute IDs to leave out of everything; raises UnknownDisputes for an ID not in the store."""
     db = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
     try:
-        raw_disputes = [(r["dispute_id"], r["source"], r["detected_at"], json.loads(r["data"]), r["full_fetched"])
+        all_disputes = [(r["dispute_id"], r["source"], r["detected_at"], json.loads(r["data"]), r["full_fetched"])
                         for r in _rows(db, "disputes")]
+        excluded = set(exclude)
+        unknown = sorted(excluded - {i for i, *_ in all_disputes})
+        if unknown:
+            raise UnknownDisputes(unknown)
+        excluded_txns = set().union(*(_transaction_ids(d) for i, _, _, d, _ in all_disputes if i in excluded))
+        keep = lambda r: r.get("dispute_id") not in excluded  # noqa: E731
+        raw_disputes = [d for d in all_disputes if d[0] not in excluded]
         disputes = [{"dispute_id": i, "source": "paypal", "detected_via": via, "detected_at": at,
                      "full_fetched": full, "data": _allowlist_dispute(data)}
                     for i, via, at, data, full in raw_disputes]
-        decisions = [_json_cols(r, _DECISION_JSON) for r in _rows(db, "decisions")]
+        decisions = [_json_cols(r, _DECISION_JSON) for r in _rows(db, "decisions") if keep(r)]
         # Each archived row is the full decision it replaced (JSON), kept for the before/after view.
         history = [{"dispute_id": r["dispute_id"], "archived_at": r["archived_at"], "replaced_by": r["replaced_by"],
                     "record": _json_cols(json.loads(r["record"]), _DECISION_JSON)}
-                   for r in sorted(_rows(db, "decision_history"), key=lambda r: r["id"])]
-        events = [_json_cols(r, ("data",)) for r in _rows(db, "merchant_events")]
+                   for r in sorted(_rows(db, "decision_history"), key=lambda r: r["id"]) if keep(r)]
+        events = [_json_cols(r, ("data",)) for r in _rows(db, "merchant_events")
+                  if keep(r) and r.get("transaction_id") not in excluded_txns]
         mapping = _identifiers([d for _, _, _, d, _ in raw_disputes], decisions + [h["record"] for h in history])
-        drafts = _rows(db, "evidence_drafts")
-        submissions = [_json_cols(r, ("paypal_error",)) for r in _rows(db, "submissions")]
-        verified = _rows(db, "verified_behaviours")
+        # Mentions of an excluded dispute elsewhere (e.g. another dispute's linked-dispute fact) become placeholders.
+        mapping |= {i: EXCLUDED_DISPUTE for i in excluded} | {t: EXCLUDED_TRANSACTION for t in excluded_txns}
+        drafts = [r for r in _rows(db, "evidence_drafts") if keep(r)]
+        submissions = [_json_cols(r, ("paypal_error",)) for r in _rows(db, "submissions") if keep(r)]
+        verified = [r for r in _rows(db, "verified_behaviours") if keep(r)]
         policy = _rows(db, "policy_settings")
-        merchant = [_json_cols(r, ("data",)) for r in _rows(db, "merchant_records")]
+        merchant = [_json_cols(r, ("data",)) for r in _rows(db, "merchant_records")
+                    if keep(r) and r.get("transaction_id") not in excluded_txns]
     finally:
         db.close()
     snapshot = {

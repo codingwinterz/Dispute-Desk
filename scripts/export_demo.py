@@ -2,6 +2,7 @@
 
     python scripts/export_demo.py
     python scripts/export_demo.py --out some/other.json   (write elsewhere, e.g. to inspect a scratch run)
+    python scripts/export_demo.py --exclude PP-R-AAA-1 --exclude PP-R-BBB-2   (leave disputes out entirely)
 
 Reads data/disputedesk.db read-only (or the scratch copy when DISPUTEDESK_DB and DISPUTEDESK_GRAPH are
 set; see scripts/scratch.py). Keeps only what the dashboard shows, including the decision history and
@@ -18,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from disputedesk.config import DISPUTE_DB, PROJECT_ROOT, targets  # noqa: E402
-from disputedesk.demo import SNAPSHOT_PATH, export_snapshot, scan  # noqa: E402
+from disputedesk.demo import SNAPSHOT_PATH, UnknownDisputes, export_snapshot, scan  # noqa: E402
 
 
 def _shown(path: Path) -> str:
@@ -32,6 +33,8 @@ def _shown(path: Path) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=Path, default=SNAPSHOT_PATH, help="where to write (default data/demo_snapshot.json)")
+    parser.add_argument("--exclude", action="append", default=[], metavar="DISPUTE_ID",
+                        help="leave this dispute out of everything in the snapshot (repeatable)")
     args = parser.parse_args(argv)
 
     t = targets()
@@ -41,7 +44,11 @@ def main(argv: list[str] | None = None) -> int:
     if not db.exists():
         print(f"FAIL: no local store at {_shown(db)}; run the app once to collect disputes.")
         return 1
-    snapshot, mapping = export_snapshot(db)
+    try:
+        snapshot, mapping = export_snapshot(db, args.exclude)
+    except UnknownDisputes as exc:
+        print(f"FAIL: snapshot not written; --exclude names a dispute {exc}.")
+        return 1
     failed = scan(snapshot, list(mapping))
     if failed:
         print(f"FAIL: snapshot not written; safety checks failed: {', '.join(failed)}")
@@ -52,6 +59,8 @@ def main(argv: list[str] | None = None) -> int:
           f"{len(snapshot['disputes'])} disputes, {len(snapshot['decisions'])} decisions, "
           f"{len(snapshot['decision_history'])} earlier decisions, {len(snapshot['merchant_events'])} merchant events, "
           f"{len(snapshot['submissions'])} submissions; {len(mapping)} identifiers pseudonymised; all safety checks passed")
+    if args.exclude:
+        print(f"  excluded {len(set(args.exclude))} dispute(s): {', '.join(sorted(set(args.exclude)))}")
     return 0
 
 
