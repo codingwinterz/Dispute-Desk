@@ -214,7 +214,8 @@ def create_app(
     if poller is None and settings is not None:
         poll_http = make_client(LOG_DIR / "poll_http.jsonl", secrets)
         poll_client = DisputesClient(settings, TokenProvider(settings, poll_http), poll_http)
-        poller = DisputePoller(poll_client, dispute_store, bus, LOG_DIR / "disputes", settings.poll_seconds)
+        poller = DisputePoller(poll_client, dispute_store, bus, LOG_DIR / "disputes", settings.poll_seconds,
+                               secrets=secrets)
     if analyzer is None and settings is not None:
         agent = load_agent_settings()
         analyzer = Analyzer(dispute_store, decision_store, lambda: GraphStore(connect(agent)), agent.llm_model,
@@ -306,6 +307,18 @@ def create_app(
     async def app_mode() -> JSONResponse:
         """Whether this server is in demo mode (serving recorded sandbox data)."""
         return JSONResponse(demo_info)
+
+    @app.get("/api/poller")
+    async def poller_status() -> JSONResponse:
+        """What the dispute poller last observed. Reads recorded values only; never calls PayPal."""
+        if demo:
+            return JSONResponse({"state": "recorded", "demo": True, "polling": False,
+                                 "recorded_at": demo_info.get("recorded_at"),
+                                 "message": "Recorded data, polling disabled"})
+        if poller is None:
+            return JSONResponse({"state": "off", "demo": False, "polling": False,
+                                 "message": "The poller is not running in this server."})
+        return JSONResponse(poller.status())
 
     def _queue_rows() -> list[dict[str, Any]]:
         briefs = decision_store.briefs()
