@@ -1,7 +1,7 @@
 # DisputeDesk
 
 An AI agent that decides whether to defend or settle PayPal disputes.
-The agent recommends; nothing is sent to PayPal until the merchant approves. Autopilot preview never sends anything. Autopilot preview never sends anything.
+The agent recommends; nothing is sent to PayPal until the merchant approves. Autopilot preview never sends anything.
 This repository only proves that the real PayPal sandbox dispute flow works.
 
 ## How it works
@@ -330,6 +330,7 @@ the audit and Activity logs.
 - **Arming & 30-second cancel window:** armed only by analyzer decisions and poller `dispute_updated` events (never from any `GET`). Armed jobs enter a 30-second countdown (`Would accept in 30 s (preview only)`) that the merchant can cancel from Queue, Policies, or Case. Saving policies cancels all armed jobs.
 - **Safety & recovery:** guarded SQLite state machine (`BEGIN IMMEDIATE` per transition), daily cap of `5` executions per UTC day, fresh read-only status re-check before building the dry run, `boot_id` restart recovery (marks prior `armed`/`executing` rows `stale`), circuit breaker (any exception trips `enabled = 0` and cancels armed jobs), and a top-bar kill switch on every page.
 - **Demo & scratch modes:** blocked (`403`) on all `/api/autopilot*` routes and completely hidden in the UI.
+- **Restarts and re-arming:** the Autopilot preview on/off setting is stored in SQLite and survives a server restart. A restart marks every pending preview job (`armed` or `executing`) `stale`, and a stale job never fires. A job that ended `capped` or `cancelled` is not armed again for that dispute.
 
 ## What's next
 

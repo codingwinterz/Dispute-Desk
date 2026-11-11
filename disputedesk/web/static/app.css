@@ -1422,3 +1422,6 @@ main button.secondary.small { font-size: 11px; padding: 6px 10px; }
 @media (prefers-reduced-motion: reduce) {
   .ap-quota-fill, .ap-bar-fill { transition: none; }
 }
+/* Kill switch failure text: red comes from the shared .error-text class, as for the poll chip. */
+.autopilot-kill-error { font-size: 12px; font-weight: 600; max-width: 340px; }
+.autopilot-kill-error[hidden] { display: none; }
