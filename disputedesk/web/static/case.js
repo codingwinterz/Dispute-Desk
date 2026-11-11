@@ -516,6 +516,12 @@
     }
 
     input.addEventListener("input", () => { qaState.question = input.value; });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        if (!qaState.pending) askButton.click();
+      }
+    });
     const form = el("form", { class: "qa-form" },
       el("label", { class: "hint", for: "qa-question", text: "Ask a question answered only from the numbered facts below." }),
       input,
