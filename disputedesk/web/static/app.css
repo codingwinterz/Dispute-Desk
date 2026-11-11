@@ -106,7 +106,7 @@ body.shell > main { grid-area: main; width: 100%; min-width: 0; overflow-x: clip
 .sidebar { overflow-x: hidden; }
 .sidebar .brand { font-size: clamp(18px, 1.6vw, 24px); }
 .sidebar .brand .tab, .site-tab {
-  width: 18px; height: 14px; background: var(--primary);
+  width: 18px; height: 14px; flex-shrink: 0; background: var(--primary);
   border-radius: 3px 3px 0 0; clip-path: polygon(0 30%, 40% 30%, 52% 0, 100% 0, 100% 100%, 0 100%);
 }
 .side-links { display: grid; gap: 4px; }
