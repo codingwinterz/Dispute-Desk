@@ -4,7 +4,8 @@ The model sees only the case's numbered facts (F1..Fn) and the merchant's questi
 free text, policy rules, drafts, attachments, or tools. Output is validated against a schema;
 when answered is true, at least one supplied fact ID must be cited, and any unknown ID or
 forbidden word fails validation. Invalid output is retried once; raw model output and exception
-messages are never logged. Makes no database writes and no PayPal API calls.
+messages are never logged. Each LLM call has an explicit 30-second timeout; a timeout, like any other
+call failure, is not retried and surfaces as a 502. Makes no database writes and no PayPal API calls.
 """
 
 import json
@@ -28,6 +29,7 @@ from disputedesk.decision import (
 log = logging.getLogger("disputedesk.qa")
 
 MAX_QUESTION_CHARS = 500
+QA_TIMEOUT_SECONDS = 30  # per LLM call; a timeout is not retried and ends in the same 502 as any failure
 
 QA_SYSTEM_PROMPT = """You are DisputeDesk, answering a merchant's question about one PayPal dispute.
 
@@ -144,6 +146,7 @@ def answer_case_question(
                 messages=messages,
                 temperature=0,
                 response_format={"type": "json_object"},
+                timeout=QA_TIMEOUT_SECONDS,
             )
             text = resp.choices[0].message.content or ""
         except Exception as exc:

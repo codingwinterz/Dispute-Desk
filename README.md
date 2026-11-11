@@ -211,6 +211,15 @@ redirects there.
   text the agent reads, built by the server. Saved policies apply to the next analysis; each decision
   stores the rules it was made under, and the case page shows the rules it cited.
 
+**Ask about this case** (case page, live mode only; hidden in demo mode): a read-only question box
+answered only from the case's numbered facts. The server sends the LLM the question and the facts
+(`F1`…) already stored with the decision, nothing else: no buyer messages, no attachment names, no
+policy rules, no drafts. The reply must cite supplied fact IDs; an unknown ID, a missing citation or a
+forbidden word fails validation, which is retried once and then reported as an error. It calls no tools
+and writes nothing, to the store or to PayPal. Questions are capped at 500 characters and each LLM call
+has a 30-second timeout. As in the decision step, the facts sent include the simulated shipment and
+checkout-device records and the buyer's sandbox payer ID.
+
 ## Approving a response (PayPal writes)
 
 The case page's approval panel is the only way the app writes to PayPal. Nothing is ever sent from the

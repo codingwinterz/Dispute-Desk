@@ -13,7 +13,7 @@ from disputedesk.decision_store import DecisionStore
 from disputedesk.demo import DEMO_MESSAGE, export_snapshot, scan
 from disputedesk.dispute_store import DisputeStore
 from disputedesk.graph import GraphStore, context_to_facts
-from disputedesk.qa import QA_SYSTEM_PROMPT, answer_case_question, parse_qa_output
+from disputedesk.qa import QA_SYSTEM_PROMPT, QA_TIMEOUT_SECONDS, answer_case_question, parse_qa_output
 from disputedesk.webhooks import EventStore, create_app
 from tests.fakes import FakeGraph, context_row, sample_dispute
 
@@ -223,3 +223,30 @@ def test_demo_mode_blocks_qa_and_ui_hides_it(tmp_path, monkeypatch):
     assert "DD.DEMO_LABEL" not in qa_fn_src  # completely hidden in demo mode, not a disabled control
     assert "href: `#fact-${c}`" in qa_fn_src
 
+
+
+class FakeTimeout(Exception):
+    """Stands in for the provider's timeout exception: no HTTP status, so it is never retried."""
+
+
+def test_qa_passes_explicit_timeout_and_a_timeout_is_a_502(stores, tmp_path, monkeypatch):
+    llm = FakeLLM(qa_json())
+    res = answer_case_question("PP-R-TST-1", "Delivered?", FACTS, "m", completion=llm)
+    assert res.status == "ok"
+    assert llm.calls[0]["timeout"] == QA_TIMEOUT_SECONDS == 30
+
+    slow = FakeLLM(FakeTimeout("upstream url with ?key=secret"))
+    res = answer_case_question("PP-R-TST-1", "Delivered?", FACTS, "m", completion=slow, sleep=lambda _s: None)
+    assert res.status == "error" and res.error == "llm_call_failed:FakeTimeout"
+    assert len(slow.calls) == 1  # a timeout is not retried
+
+    _db, d, dec = stores
+    _seed_decided(stores)
+    app = create_app(verifier=object(), store=EventStore(tmp_path / "logs"), dispute_store=d, decision_store=dec,
+                     llm_model="gemini/test")
+    client = TestClient(app)
+    monkeypatch.setattr(decision_mod, "_litellm_completion", lambda: FakeLLM(FakeTimeout("upstream url with ?key=secret")))
+    resp = client.post("/api/decisions/PP-R-TST-1/ask", json={"question": "Delivered?"})
+    assert resp.status_code == 502
+    assert resp.json()["error"] == "llm_call_failed:FakeTimeout"
+    assert "secret" not in resp.text
