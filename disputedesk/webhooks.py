@@ -32,6 +32,7 @@ from pydantic import ValidationError
 from disputedesk.analyzer import Analyzer
 from disputedesk.attachments import SAFE_HEADERS, AttachmentError, AttachmentFetcher, buyer_documents, listing
 from disputedesk.auth import TokenProvider
+from disputedesk.autopilot import UNAVAILABLE_MESSAGE, Autopilot, AutopilotStore
 from disputedesk.config import DEFAULT_LLM_MODEL, LOG_DIR, Settings, load_agent_settings, load_settings, targets
 from disputedesk.decision import SANDBOX_NOTE
 from disputedesk.decision_store import DecisionStore
@@ -162,6 +163,8 @@ def create_app(
     demo: bool | None = None,
     qa_fn: Callable[..., QAResult] | None = None,
     llm_model: str | None = None,
+    autopilot_store: AutopilotStore | None = None,
+    autopilot: Autopilot | None = None,
 ) -> FastAPI:
     """Build the app. With no verifier, settings come from the environment and the real
     poller is started; tests inject their own pieces and get no poller unless they pass one.
@@ -258,6 +261,31 @@ def create_app(
             submit_client = DisputesClient(settings, TokenProvider(settings, submit_http), submit_http)
         submitter = Submitter(dispute_store, decision_store, draft_store, SubmissionStore(dispute_store.path),
                               submit_client, bus)
+    scratch = bool(demo_info.get("scratch"))
+    autopilot_blocked = bool(demo or scratch)
+    owns_autopilot_store = False
+    if autopilot_blocked:
+        autopilot_store = None
+        autopilot = None
+    else:
+        if autopilot_store is None:
+            autopilot_store = AutopilotStore(dispute_store.path)
+            owns_autopilot_store = True
+        if autopilot is None:
+            fetch_client = getattr(submitter, "_client", None)
+            fetch_fresh = fetch_client.get_dispute if fetch_client is not None else None
+            autopilot = Autopilot(
+                autopilot_store,
+                dispute_store,
+                decision_store,
+                policy_store,
+                submitter.store,
+                dry_run=submitter.dry_run,
+                fetch_fresh=fetch_fresh,
+            )
+        bus.subscribe(autopilot.on_event)
+        if analyzer is not None and getattr(analyzer, "_on_decision", None) is None:
+            analyzer._on_decision = autopilot.on_decision
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -265,6 +293,8 @@ def create_app(
         if analyzer:
             analyzer.start()
             await run_in_threadpool(analyzer.sweep)
+        if autopilot:
+            autopilot.start()
         task = asyncio.create_task(poller.run(stop)) if poller else None
         try:
             yield
@@ -274,6 +304,10 @@ def create_app(
                 await task
             if analyzer:
                 await run_in_threadpool(analyzer.stop)
+            if autopilot:
+                await run_in_threadpool(autopilot.stop)
+            if owns_autopilot_store and autopilot_store is not None:
+                autopilot_store.close()
             if demo_dir is not None:
                 for s_ in demo_stores:
                     s_.close()
@@ -283,6 +317,8 @@ def create_app(
     app.state.bus = bus
     app.state.dispute_store = dispute_store
     app.state.decision_store = decision_store
+    app.state.autopilot = autopilot
+    app.state.autopilot_store = autopilot_store
 
     @app.middleware("http")
     async def local_only(request: Request, call_next: Any) -> Any:
@@ -376,8 +412,68 @@ def create_app(
         return JSONResponse({"dispute": dispute, "decision": _with_fact_refs(decision),
                              "draft": effective_draft(saved, decision), "submit": check,
                              "history": history, "events": events,
+                             "autopilot": None if autopilot_blocked or autopilot_store is None
+                             else await run_in_threadpool(autopilot_store.job, dispute_id),
+                             "autopilot_audit": [] if autopilot_blocked or autopilot_store is None
+                             else await run_in_threadpool(autopilot_store.audit_for, dispute_id),
                              # Buyer attachments by index only (no names or links); none in demo mode.
                              "attachments": [] if demo else await run_in_threadpool(_attachment_list, dispute_id)})
+
+    def _autopilot_refusal() -> JSONResponse | None:
+        if demo:
+            return JSONResponse({"error": "demo_mode", "message": DEMO_MESSAGE}, status_code=403)
+        if scratch or autopilot is None:
+            return JSONResponse({"error": "scratch_mode" if scratch else "unavailable",
+                                 "message": UNAVAILABLE_MESSAGE}, status_code=403)
+        return None
+
+    @app.get("/api/autopilot")
+    async def get_autopilot() -> JSONResponse:
+        """Read-only Autopilot preview state and recent audit rows. Never arms jobs."""
+        blocked = _autopilot_refusal()
+        if blocked:
+            return blocked
+        return JSONResponse(await run_in_threadpool(autopilot.state))
+
+    @app.put("/api/autopilot/settings")
+    async def put_autopilot_settings(request: Request) -> JSONResponse:
+        blocked = _autopilot_refusal()
+        if blocked:
+            return blocked
+        refused = _refuse_write(request)
+        if refused:
+            return refused
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict) or not isinstance(body.get("enabled"), bool):
+            return JSONResponse({"error": "invalid body", "message": 'Send JSON like {"enabled": true}.'}, status_code=422)
+        return JSONResponse(await run_in_threadpool(autopilot.set_enabled, body["enabled"]))
+
+    @app.post("/api/autopilot/{dispute_id}/cancel")
+    async def cancel_autopilot(dispute_id: str, request: Request) -> JSONResponse:
+        blocked = _autopilot_refusal()
+        if blocked:
+            return blocked
+        refused = _refuse_write(request)
+        if refused:
+            return refused
+        ok = await run_in_threadpool(autopilot.cancel, dispute_id)
+        if not ok:
+            return JSONResponse({"error": "not_armed", "message": "No armed Autopilot preview window for this dispute."},
+                                status_code=404)
+        return JSONResponse({"cancelled": True, "autopilot": await run_in_threadpool(autopilot.state)})
+
+    @app.post("/api/autopilot/kill")
+    async def kill_autopilot(request: Request) -> JSONResponse:
+        blocked = _autopilot_refusal()
+        if blocked:
+            return blocked
+        refused = _refuse_write(request)
+        if refused:
+            return refused
+        return JSONResponse(await run_in_threadpool(autopilot.kill))
 
     @app.post("/api/decisions/{dispute_id}/ask")
     async def ask_case_question(dispute_id: str, request: Request) -> JSONResponse:
@@ -505,6 +601,8 @@ def create_app(
         if isinstance(settings, JSONResponse):
             return settings
         updated_at = await run_in_threadpool(policy_store.save, settings)
+        if autopilot is not None:
+            await run_in_threadpool(autopilot.on_policy_change)
         log.info("policy settings saved")
         return JSONResponse(_policy_body(settings, updated_at))
 

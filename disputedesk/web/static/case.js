@@ -15,6 +15,8 @@
   let lastResult = null;     // outcome of the last approval on this page, shown after re-render
   let caseHistory = [];      // earlier decisions for this dispute (newest first), from GET /api/decisions/{id}
   let caseEvents = [];       // simulated merchant events imported for this dispute
+  let autopilotAudit = [];   // Autopilot preview audit entries (empty in demo and scratch modes)
+  let autopilotCtrl = null;
   let graph3d = null;        // live three.js view; disposed before every re-render and on leaving
   let pendingGraph = null;   // a 3D view to mount once its container is in the page
   const MAX_DRAFT = 2000;    // matches the server's cap (disputedesk/drafts.py)
@@ -598,6 +600,7 @@
                                   h.status === "ok" ? "" : "failed"]),
       ...caseEvents.map((e) => [e.received_at, `Merchant event received: ${String(e.status).toLowerCase().replaceAll("_", " ")} scan `
         + (DD.mode.demo ? `(${RECORDED_EVENT})` : "(simulated)"), "event"]),
+      ...(!DD.mode.demo && !DD.mode.scratch ? autopilotAudit.map((e) => [e.created_at, e.message, e.kind === "failed" ? "failed" : "event"]) : []),
       [rec && rec.created_at, rec ? (rec.status === "ok"
         ? (afterEvent ? `Re-analyzed after the merchant event: ${outcome(rec)}` : `Analyzed by the agent: ${outcome(rec)}`)
         : "Analysis failed") : "", rec && rec.status !== "ok" ? "failed" : ""],
@@ -710,6 +713,7 @@
     const { dispute, decision, draft, submit } = body;
     caseHistory = body.history || [];
     caseEvents = body.events || [];
+    autopilotAudit = (!DD.mode.demo && !DD.mode.scratch) ? (body.autopilot_audit || []) : [];
     // Hierarchy: 1) decision and risk (full width, with the timeline), 2) reasons beside the evidence
     // path, 3) draft and approval. Same panels as before; only their placement changes.
     const panels = decisionPanels(dispute, decision, draft, submit).filter(Boolean);
@@ -736,10 +740,16 @@
 
   window.addEventListener("beforeunload", (e) => { if (editorDirty) e.preventDefault(); });
   window.addEventListener("pagehide", disposeGraph);  // free the GPU context when leaving the page
+  window.addEventListener("pagehide", () => { if (autopilotCtrl) autopilotCtrl.destroy(); });
 
   if (!disputeId) {
     root.replaceChildren(stateView("No dispute selected", "Open a dispute from the queue to see its case."));
   } else {
+    autopilotCtrl = DD.mountAutopilot(document.getElementById("autopilot-case-slot"), {
+      disputeId,
+      showToggle: false,
+      onUpdate: () => { lastKey = ""; load(); },
+    });
     load();
     setInterval(load, POLL_MS);
   }

@@ -252,6 +252,9 @@
     });
   }
 
+  const autopilotCtrl = DD.mountAutopilot(document.getElementById("autopilot-bar"), { showToggle: true, onUpdate: refresh });
+  window.addEventListener("pagehide", () => { if (autopilotCtrl) autopilotCtrl.destroy(); });
+
   refresh();
   setInterval(refresh, POLL_MS);
 })();

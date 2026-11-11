@@ -188,6 +188,7 @@
       saved = body.settings;
       showRules(body.rules);
       setStatus(`Saved ${new Date(body.updated_at).toLocaleTimeString()}. The next analysis uses these rules.`);
+      window.dispatchEvent(new CustomEvent("dd:autopilot-changed"));
     } catch (err) {
       setStatus(`Not saved: ${err.message}`, true);
     } finally {
@@ -214,6 +215,8 @@
         button.disabled = true;
         button.textContent = DD.DEMO_LABEL;
         setStatus("Recorded sandbox data: you can try the switches and see the rule text change, but nothing is saved.");
+      } else if (!DD.mode.scratch) {
+        DD.mountAutopilot(document.getElementById("autopilot-settings"), { showToggle: true });
       }
     } catch (err) {
       DD.live(false);

@@ -53,6 +53,9 @@ const DD = (() => {
           title: `Scratch copy: database ${m.scratch_db}, graph ${m.scratch_graph}. The real local store and graph are not touched.`, text: "Scratch data" }));
         document.body.classList.add("is-scratch");
       }
+      if (!m.demo && !m.scratch) {
+        mountTopbarKillSwitch(topbar.querySelector(".topbar-status"));
+      }
       if (!m.demo) return;
       const recorded = m.recorded_at ? new Date(m.recorded_at).toLocaleString() : "an earlier session";
       topbar.querySelector(".topbar-status").prepend(el("span", { class: "demo-badge", title: `Recorded sandbox data from ${recorded}. Nothing is sent to PayPal.`, text: "Demo data" }));
@@ -471,6 +474,248 @@ const DD = (() => {
       el("span", { text: String(score) }), bar);
   }
 
+  // ---- Autopilot preview & kill switch (shadow-only; hidden in demo and scratch mode) --------
+  function mountTopbarKillSwitch(statusBar) {
+    if (!statusBar || mode.demo || mode.scratch) return;
+    const btn = el("button", {
+      type: "button",
+      id: "autopilot-kill",
+      class: "secondary small autopilot-kill",
+      hidden: true,
+      title: "Immediately switch off Autopilot preview and cancel any armed countdowns",
+      text: "Stop Autopilot",
+    });
+    statusBar.prepend(btn);
+
+    async function sync() {
+      if (mode.demo || mode.scratch) { btn.hidden = true; return; }
+      try {
+        const resp = await fetch("/api/autopilot", { cache: "no-store" });
+        if (!resp.ok) { btn.hidden = true; return; }
+        const st = await resp.json();
+        const active = Boolean(st.enabled || (st.pending && st.pending.length));
+        btn.hidden = !active;
+      } catch {
+        // Keep last state on transient failure.
+      }
+    }
+
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        await fetch("/api/autopilot/kill", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        btn.hidden = true;
+        window.dispatchEvent(new CustomEvent("dd:autopilot-changed"));
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    window.addEventListener("dd:autopilot-changed", sync);
+    sync();
+    setInterval(() => { if (!document.hidden) sync(); }, 5000);
+  }
+
+  function mountAutopilot(container, opts = {}) {
+    if (!container) return null;
+    const { disputeId = null, showToggle = true, onUpdate = null } = opts;
+    let disposed = false;
+    let state = null;
+    let syncedAt = 0;
+    let pollTimer = 0;
+    let tickTimer = 0;
+    let busy = false;
+    let statusMsg = "";
+
+    const remainingFor = (job) => {
+      const elapsed = Math.max(0, (Date.now() - syncedAt) / 1000);
+      return Math.max(0, (Number(job.remaining_seconds) || 0) - elapsed);
+    };
+
+    async function fetchState() {
+      if (disposed || mode.demo || mode.scratch) return;
+      try {
+        const resp = await fetch("/api/autopilot", { cache: "no-store" });
+        if (!resp.ok) {
+          container.hidden = true;
+          container.replaceChildren();
+          return;
+        }
+        const next = await resp.json();
+        const prevPending = state && state.pending ? state.pending.length : 0;
+        const nextPending = next.pending ? next.pending.length : 0;
+        state = next;
+        syncedAt = Date.now();
+        draw();
+        if (prevPending > 0 && nextPending === 0 && onUpdate) onUpdate();
+      } catch {
+        // Transient connectivity loss; keep existing render.
+      }
+    }
+
+    async function postAction(url, method, bodyObj, okText) {
+      if (busy || mode.demo || mode.scratch) return;
+      busy = true;
+      statusMsg = "";
+      draw();
+      try {
+        const resp = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(bodyObj),
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          statusMsg = body.message || body.error || `HTTP ${resp.status}`;
+        } else {
+          state = body.autopilot || body;
+          syncedAt = Date.now();
+          if (okText) statusMsg = okText;
+        }
+      } catch {
+        statusMsg = "Can't reach the DisputeDesk server.";
+      } finally {
+        busy = false;
+        draw();
+        window.dispatchEvent(new CustomEvent("dd:autopilot-changed"));
+        if (onUpdate) onUpdate();
+      }
+    }
+
+    function updateTicks() {
+      if (!state || mode.demo || mode.scratch) return;
+      const pending = (state.pending || []).filter((j) => !disputeId || j.dispute_id === disputeId);
+      for (const job of pending) {
+        const rem = remainingFor(job);
+        const total = Math.max(1, Number(job.window_seconds) || 30);
+        const secs = Math.ceil(rem);
+        const pct = Math.max(0, Math.min(100, (rem / total) * 100));
+        const card = container.querySelector(`[data-autopilot-id="${CSS.escape(job.dispute_id)}"]`);
+        if (card) {
+          const timerEl = card.querySelector(".ap-timer");
+          const barEl = card.querySelector(".ap-bar-fill");
+          if (timerEl) timerEl.textContent = rem > 0 ? `Would accept in ${secs} s (preview only)` : "Building preview dry run…";
+          if (barEl) barEl.style.width = `${pct.toFixed(1)}%`;
+        }
+      }
+    }
+
+    function draw() {
+      if (disposed || mode.demo || mode.scratch || !state) {
+        container.hidden = true;
+        container.replaceChildren();
+        return;
+      }
+      const pending = (state.pending || []).filter((j) => !disputeId || j.dispute_id === disputeId);
+      if (!showToggle && !pending.length && !statusMsg) {
+        container.hidden = true;
+        container.replaceChildren();
+        return;
+      }
+      container.hidden = false;
+      const children = [];
+      if (showToggle) {
+        const toggleId = `autopilot-toggle-${disputeId || "global"}`;
+        const input = el("input", {
+          type: "checkbox",
+          id: toggleId,
+          checked: Boolean(state.enabled),
+          disabled: busy,
+        });
+        input.addEventListener("change", () => postAction("/api/autopilot/settings", "PUT", { enabled: input.checked }, ""));
+        const killBtn = (state.enabled || pending.length)
+          ? el("button", { class: "secondary small", type: "button", disabled: busy, text: "Stop Autopilot" })
+          : null;
+        if (killBtn) killBtn.addEventListener("click", () => postAction("/api/autopilot/kill", "POST", {}, "Autopilot preview stopped."));
+        const quotaPct = Math.max(0, Math.min(100, (state.daily_used / Math.max(1, state.daily_limit)) * 100));
+        const pillText = state.enabled ? "PREVIEW ON" : state.tripped_at ? "TRIPPED" : "OFF";
+        children.push(
+          el("div", { class: "autopilot-head" },
+            el("div", { class: "autopilot-toggle-wrap" },
+              el("label", { class: "switch", for: toggleId }, input, el("span", { class: "track", "aria-hidden": "true" })),
+              el("div", {},
+                el("div", { class: "autopilot-title-row" },
+                  el("label", { class: "autopilot-title", for: toggleId, text: "Autopilot preview (never sends)" }),
+                  el("span", { class: `autopilot-pill${state.enabled ? " is-on" : ""}`, text: pillText }),
+                  killBtn),
+                el("p", {
+                  class: "hint",
+                  text: "Shadow-only preview for chargeback P2 disputes under $15 USD with no linked disputes and no buyer links or documents. Builds a dry run after 30 s and never sends to PayPal.",
+                }))),
+            el("div", { class: "autopilot-quota" },
+              el("span", { class: "cap", text: "Preview cap" }),
+              el("span", { class: "ap-quota-num num", text: `${state.daily_used} / ${state.daily_limit} today` }),
+              el("div", { class: "ap-quota-bar", "aria-hidden": "true" },
+                el("span", { class: "ap-quota-fill", style: `width:${quotaPct.toFixed(0)}%` })))));
+        if (state.tripped_at && !state.enabled) {
+          children.push(el("p", {
+            class: "notice",
+            text: `Breaker tripped (${state.trip_reason || "stopped"}). Switch Autopilot preview back on when ready.`,
+          }));
+        }
+      }
+
+      if (pending.length) {
+        const cards = pending.map((job) => {
+          const rem = remainingFor(job);
+          const total = Math.max(1, Number(job.window_seconds) || 30);
+          const pct = Math.max(0, Math.min(100, (rem / total) * 100));
+          const cancelBtn = el("button", { class: "secondary", type: "button", disabled: busy, text: "Cancel" });
+          cancelBtn.addEventListener("click", () =>
+            postAction(`/api/autopilot/${encodeURIComponent(job.dispute_id)}/cancel`, "POST", {}, `Cancelled preview for ${job.dispute_id}.`));
+          const amt = job.amount_value !== null && job.amount_value !== undefined
+            ? `$${Number(job.amount_value).toFixed(2)} ${job.currency || "USD"}`
+            : "P2 claim";
+          return el("div", { class: "autopilot-countdown", "data-autopilot-id": job.dispute_id, role: "status", "aria-live": "polite" },
+            el("div", { class: "ap-cd-main" },
+              el("div", { class: "ap-cd-meta" },
+                el("span", { class: "autopilot-pill is-on", text: "Preview window" }),
+                el("a", { class: "num ap-case-link", href: `/case/${encodeURIComponent(job.dispute_id)}`, text: job.dispute_id }),
+                el("span", { class: "num ap-amt", text: amt }),
+                el("span", { class: "ap-timer num", text: rem > 0 ? `Would accept in ${Math.ceil(rem)} s (preview only)` : "Building preview dry run…" })),
+              cancelBtn),
+            el("div", { class: "ap-bar", "aria-hidden": "true" },
+              el("span", { class: "ap-bar-fill", style: `width:${pct.toFixed(1)}%` })));
+        });
+        children.push(el("div", { class: "autopilot-list" }, ...cards));
+      }
+
+      if (statusMsg) {
+        children.push(el("p", { class: "hint ap-status", role: "status", text: statusMsg }));
+      }
+      container.replaceChildren(...children);
+    }
+
+    const onChanged = () => fetchState();
+    window.addEventListener("dd:autopilot-changed", onChanged);
+    modeReady.then((m) => {
+      if (disposed || m.demo || m.scratch) {
+        container.hidden = true;
+        container.replaceChildren();
+        return;
+      }
+      fetchState();
+      pollTimer = setInterval(() => {
+        if (!document.hidden) fetchState();
+      }, 2000);
+      tickTimer = setInterval(updateTicks, 250);
+    });
+
+    return {
+      refresh: fetchState,
+      destroy: () => {
+        disposed = true;
+        window.removeEventListener("dd:autopilot-changed", onChanged);
+        clearInterval(pollTimer);
+        clearInterval(tickTimer);
+      },
+    };
+  }
+
   return { el, color, rgba, colorNum, dueSoonChip, isOverdue, revealStaggered, eyebrow, eyebrowWith, statChip, sumAmounts, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, groupDisputes, deadlineNode, statusBadge, STATUS_HELP, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
-           dueDate, sourceTag, decisionChip, riskNode, tick, pollChipText, detectionText };
+           dueDate, sourceTag, decisionChip, riskNode, tick, pollChipText, detectionText, mountAutopilot };
 })();

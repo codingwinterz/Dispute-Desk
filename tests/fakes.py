@@ -64,3 +64,21 @@ def context_row(linked: list[dict[str, Any]] | None = None, shipment: bool = Tru
          if shipment else [None] * 10)
     tel = ["TEL-1", "203.0.113.10", "dev-aaa", "Austin, TX, US", "seeded"] if telemetry else [None] * 5
     return d + c + t + s + tel + [linked or []]
+
+
+class FakeDisputesClient:
+    """Stands in for DisputesClient in the autopilot tests. Counts every call; `send_action` is the
+    PayPal write and must never be reached by autopilot code, so it also raises."""
+
+    def __init__(self, disputes: dict[str, dict[str, Any]] | None = None):
+        self.disputes = disputes or {}
+        self.get_calls: list[str] = []
+        self.send_action_calls: list[tuple[str, str, str]] = []
+
+    def get_dispute(self, dispute_id: str) -> dict[str, Any]:
+        self.get_calls.append(dispute_id)
+        return self.disputes[dispute_id]
+
+    def send_action(self, action: str, dispute_id: str, text: str) -> Any:
+        self.send_action_calls.append((action, dispute_id, text))
+        raise AssertionError("send_action must never be called by autopilot code")

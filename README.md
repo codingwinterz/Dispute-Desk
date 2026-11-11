@@ -1,7 +1,7 @@
 # DisputeDesk
 
 An AI agent that decides whether to defend or settle PayPal disputes.
-The agent recommends; nothing is sent to PayPal until the merchant approves.
+The agent recommends; nothing is sent to PayPal until the merchant approves. Autopilot preview never sends anything. Autopilot preview never sends anything.
 This repository only proves that the real PayPal sandbox dispute flow works.
 
 ## How it works
@@ -16,7 +16,7 @@ This repository only proves that the real PayPal sandbox dispute flow works.
 5. The merchant approves: a dry run shows the exact request, a confirmation names the action and amount,
    and only then is anything sent to PayPal.
 
-The agent recommends; nothing is sent to PayPal until the merchant approves.
+The agent recommends; nothing is sent to PayPal until the merchant approves. Autopilot preview never sends anything.
 
 ```mermaid
 flowchart LR
@@ -120,6 +120,7 @@ Sandbox only. There are no live credentials and no live base URL anywhere in thi
 - `disputedesk/decision.py`: LiteLLM decision step with schema validation and citation checks
 - `disputedesk/decision_store.py`: SQLite store of decisions
 - `disputedesk/analyzer.py`: worker thread that runs decisions automatically
+- `disputedesk/autopilot.py`: shadow-only Autopilot preview state machine, runner, circuit breaker, and audit log
 - `scripts/sandbox_check.py`: step-by-step check against the real sandbox (not part of pytest)
 - `scripts/preflight.py`: read-only environment check (.env, FalkorDB, sandbox-only URL)
 - `scripts/seed_graph.py`, `scripts/analyze.py`: seed the graph; run decisions from the CLI
@@ -223,7 +224,7 @@ checkout-device records and the buyer's sandbox payer ID.
 ## Approving a response (PayPal writes)
 
 The case page's approval panel is the only way the app writes to PayPal. Nothing is ever sent from the
-poller, the webhook, the analyzer or app startup.
+poller, the webhook, the analyzer or app startup. Autopilot preview never sends anything.
 
 - **What it sends.** DEFEND sends `POST /v1/customer/disputes/{id}/provide-evidence` as multipart
   form data with one `input` part: `{"evidences": [{"evidence_type": "OTHER", "notes": <saved draft>}]}`.
@@ -317,3 +318,19 @@ the analyzer (one LLM call). The new decision is stored and the one it replaces 
 decision history. The case page shows "Merchant event received" in its timeline and, when the
 event triggered the current decision, the verdict before and after. Each event can be imported once
 (`event_id`); `--no-analyze` writes the event without re-deciding. No PayPal calls.
+
+## Autopilot preview (shadow-only)
+
+Autopilot preview (`Autopilot preview (never sends)`) is an opt-in shadow-only runner (`OFF` by default)
+for small P2 claims. Autopilot preview never sends anything: every job stops after building the
+dry-run request and writes `"Autopilot preview: would have accepted <dispute>. Nothing was sent."` to
+the audit and Activity logs.
+
+- **Eligibility:** only `CHARGEBACK`-stage disputes with an `ok` `ACCEPT` decision citing `P2` (and not `P3`), USD amount strictly under `$15` and under the P2 threshold, no linked disputes, no buyer documents or URLs, status `WAITING_FOR_SELLER_RESPONSE` with `accept_claim`, and no blocking submission.
+- **Arming & 30-second cancel window:** armed only by analyzer decisions and poller `dispute_updated` events (never from any `GET`). Armed jobs enter a 30-second countdown (`Would accept in 30 s (preview only)`) that the merchant can cancel from Queue, Policies, or Case. Saving policies cancels all armed jobs.
+- **Safety & recovery:** guarded SQLite state machine (`BEGIN IMMEDIATE` per transition), daily cap of `5` executions per UTC day, fresh read-only status re-check before building the dry run, `boot_id` restart recovery (marks prior `armed`/`executing` rows `stale`), circuit breaker (any exception trips `enabled = 0` and cancels armed jobs), and a top-bar kill switch on every page.
+- **Demo & scratch modes:** blocked (`403`) on all `/api/autopilot*` routes and completely hidden in the UI.
+
+## What's next
+
+- **Autopilot live mode** — designed and not built (kept out of this shadow-only release; no live toggle, typed confirmation phrase, or live execution path exists).

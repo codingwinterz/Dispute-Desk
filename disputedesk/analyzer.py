@@ -33,6 +33,7 @@ class Analyzer:
         decide_fn: Callable[..., DecisionResult] = decide,
         rules: list[dict[str, str]] | None = None,
         rules_provider: Callable[[], list[dict[str, str]]] | None = None,
+        on_decision: Callable[[str, DecisionResult], None] | None = None,
     ):
         self._disputes = disputes
         self._decisions = decisions
@@ -44,6 +45,7 @@ class Analyzer:
         # policy change applies to the next analysis. A fixed list is for tests and the CLI default.
         fixed = rules if rules is not None else DEFAULT_RULES
         self._rules_provider = rules_provider or (lambda: fixed)
+        self._on_decision = on_decision
         self._queue: queue.Queue[Any] = queue.Queue()
         self._pending: set[str] = set()
         self._lock = threading.Lock()
@@ -131,4 +133,9 @@ class Analyzer:
         rules = self._rules_provider()
         result = self._decide(dispute_id, facts, rules, self._model)
         self._decisions.save(dispute_id, result, ctx, rules, trigger=trigger)
+        if result.status == "ok" and self._on_decision is not None:
+            try:
+                self._on_decision(dispute_id, result)
+            except Exception as exc:
+                log.error("on_decision callback failed dispute=%s: %s", dispute_id, type(exc).__name__)
         return result.status if result.status == "ok" else (result.error or "error")
