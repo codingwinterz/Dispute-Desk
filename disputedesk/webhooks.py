@@ -32,7 +32,6 @@ from pydantic import ValidationError
 from disputedesk.analyzer import Analyzer
 from disputedesk.attachments import SAFE_HEADERS, AttachmentError, AttachmentFetcher, buyer_documents, listing
 from disputedesk.auth import TokenProvider
-from disputedesk.autopilot import AutopilotStore, _amount_usd
 from disputedesk.config import DEFAULT_LLM_MODEL, LOG_DIR, Settings, load_agent_settings, load_settings, targets
 from disputedesk.decision import SANDBOX_NOTE
 from disputedesk.decision_store import DecisionStore
@@ -41,7 +40,7 @@ from disputedesk.dispute_store import DisputeStore, safe_filename
 from disputedesk.drafts import DraftError, DraftStore, effective_draft
 from disputedesk.merchant_events import MerchantEventStore
 from disputedesk.merchant_records import MerchantRecordStore, records_view
-from disputedesk.disputes import ACCEPT_CLAIM, DisputesClient
+from disputedesk.disputes import DisputesClient
 from disputedesk.events import DisputeDetected, EventBus
 from disputedesk.graph import GraphStore, connect, context_to_facts
 from disputedesk.http_log import make_client
@@ -163,7 +162,6 @@ def create_app(
     demo: bool | None = None,
     qa_fn: Callable[..., QAResult] | None = None,
     llm_model: str | None = None,
-    autopilot_store: AutopilotStore | None = None,
 ) -> FastAPI:
     """Build the app. With no verifier, settings come from the environment and the real
     poller is started; tests inject their own pieces and get no poller unless they pass one.
@@ -238,11 +236,7 @@ def create_app(
         poller = DisputePoller(poll_client, dispute_store, bus, LOG_DIR / "disputes", settings.poll_seconds,
                                secrets=secrets)
     qa_model: str | None = None
-    if demo:
-        autopilot_store = None
-    else:
-        if autopilot_store is None:
-            autopilot_store = AutopilotStore(dispute_store.path)
+    if not demo:
         if analyzer is None and settings is not None:
             agent = load_agent_settings()
             analyzer = Analyzer(dispute_store, decision_store, lambda: GraphStore(connect(agent)), agent.llm_model,
@@ -369,36 +363,11 @@ def create_app(
         disputes = await run_in_threadpool(dispute_store.full_disputes)
         return JSONResponse(records_view(rows, disputes))
 
-    def _sync_autopilot() -> dict[str, Any]:
-        assert autopilot_store is not None
-        all_disputes = {row["dispute_id"]: dispute_store.get(row["dispute_id"]) or {} for row in dispute_store.summaries()}
-        decisions_map = {did: decision_store.get(did) for did in all_disputes}
-        submissions_map = {did: submitter.store.get(did) for did in all_disputes}
-        policy_settings, _ = policy_store.get()
-        return autopilot_store.sync_eligible(all_disputes, decisions_map, policy_settings, submissions_map)
-
-    def _check_autopilot(dispute_id: str) -> tuple[bool, int, str, str]:
-        assert autopilot_store is not None
-        return autopilot_store.check_executable(
-            dispute_id,
-            dispute_store.get(dispute_id),
-            decision_store.get(dispute_id),
-            policy_store.get()[0],
-            submitter.store.get(dispute_id),
-        )
-
-    def _finish_autopilot(dispute_id: str) -> None:
-        assert autopilot_store is not None
-        amt, cur = _amount_usd(dispute_store.get(dispute_id) or {})
-        autopilot_store.mark_executed(dispute_id, amt, cur)
-
     @app.get("/api/decisions/{dispute_id}")
     async def dispute_decision(dispute_id: str) -> JSONResponse:
         dispute = await run_in_threadpool(dispute_store.summary, dispute_id)
         if dispute is None:
             return JSONResponse({"error": "unknown dispute"}, status_code=404)
-        if not demo and autopilot_store is not None:
-            await run_in_threadpool(_sync_autopilot)
         decision = await run_in_threadpool(decision_store.get, dispute_id)
         saved = await run_in_threadpool(draft_store.get, dispute_id)
         check = await run_in_threadpool(submitter.check, dispute_id)
@@ -407,52 +376,8 @@ def create_app(
         return JSONResponse({"dispute": dispute, "decision": _with_fact_refs(decision),
                              "draft": effective_draft(saved, decision), "submit": check,
                              "history": history, "events": events,
-                             "autopilot": None if demo or autopilot_store is None else await run_in_threadpool(autopilot_store.job, dispute_id),
-                             "autopilot_events": [] if demo or autopilot_store is None else await run_in_threadpool(autopilot_store.activity_for, dispute_id),
                              # Buyer attachments by index only (no names or links); none in demo mode.
                              "attachments": [] if demo else await run_in_threadpool(_attachment_list, dispute_id)})
-
-    @app.get("/api/autopilot")
-    async def get_autopilot() -> JSONResponse:
-        if demo or autopilot_store is None:
-            return JSONResponse({"error": "demo_mode", "message": DEMO_MESSAGE}, status_code=403)
-        return JSONResponse(await run_in_threadpool(_sync_autopilot))
-
-    @app.put("/api/autopilot/settings")
-    async def put_autopilot_settings(request: Request) -> JSONResponse:
-        if demo or autopilot_store is None:
-            return JSONResponse({"error": "demo_mode", "message": DEMO_MESSAGE}, status_code=403)
-        refused = _refuse_write(request)
-        if refused:
-            return refused
-        try:
-            body = await request.json()
-        except ValueError:
-            body = None
-        if not isinstance(body, dict) or not isinstance(body.get("enabled"), bool):
-            return JSONResponse({"error": "invalid body", "message": 'Send JSON like {"enabled": true}.'}, status_code=422)
-        await run_in_threadpool(autopilot_store.set_enabled, body["enabled"])
-        log.info("p2 autopilot enabled=%s", body["enabled"])
-        return JSONResponse(await run_in_threadpool(_sync_autopilot))
-
-    @app.post("/api/autopilot/{dispute_id}/cancel")
-    async def cancel_autopilot(dispute_id: str, request: Request) -> JSONResponse:
-        if demo or autopilot_store is None:
-            return JSONResponse({"error": "demo_mode", "message": DEMO_MESSAGE}, status_code=403)
-        refused = _refuse_write(request)
-        if refused:
-            return refused
-        job = await run_in_threadpool(autopilot_store.cancel, dispute_id)
-        if job is None:
-            return JSONResponse({"error": "not_pending", "message": "No pending Autopilot countdown for this dispute."}, status_code=404)
-        log.info("p2 autopilot cancelled dispute=%s", dispute_id)
-        return JSONResponse({"job": job, "autopilot": await run_in_threadpool(autopilot_store.state)})
-
-    @app.get("/api/autopilot/activity")
-    async def autopilot_activity() -> JSONResponse:
-        if demo or autopilot_store is None:
-            return JSONResponse({"error": "demo_mode", "message": DEMO_MESSAGE}, status_code=403)
-        return JSONResponse({"events": await run_in_threadpool(autopilot_store.all_activity)})
 
     @app.post("/api/decisions/{dispute_id}/ask")
     async def ask_case_question(dispute_id: str, request: Request) -> JSONResponse:
@@ -553,24 +478,10 @@ def create_app(
         action, text = body.get("action"), body.get("text")
         if not isinstance(action, str) or not isinstance(text, str):
             return JSONResponse({"error": "invalid body", "message": "action and text are required."}, status_code=422)
-        is_autopilot = body.get("autopilot") is True
-        if is_autopilot:
-            if demo or autopilot_store is None:
-                return JSONResponse({"error": "demo_mode", "message": DEMO_MESSAGE}, status_code=403)
-            if action != ACCEPT_CLAIM:
-                return JSONResponse({"error": "autopilot_accept_only",
-                                     "message": "P2 Autopilot may only execute accept_claim."}, status_code=409)
-            ok, err_status, err_code, err_msg = await run_in_threadpool(_check_autopilot, dispute_id)
-            if not ok:
-                return JSONResponse({"error": err_code, "message": err_msg}, status_code=err_status)
         try:
             result = await run_in_threadpool(submitter.submit, dispute_id, action, text)
         except SubmitError as exc:
-            if is_autopilot and autopilot_store is not None:
-                await run_in_threadpool(autopilot_store.mark_failed, dispute_id, exc.code)
             return JSONResponse({"error": exc.code, "message": exc.message} | (exc.extra or {}), status_code=exc.http)
-        if is_autopilot and autopilot_store is not None:
-            await run_in_threadpool(_finish_autopilot, dispute_id)
         return JSONResponse(result)
 
     # --- merchant edits (local store only; never PayPal) ---------------------------

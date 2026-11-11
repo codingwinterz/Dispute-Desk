@@ -22,7 +22,6 @@
     { key: "detected", label: "Detected", one: "detected", many: "detected" },
     { key: "analyzed", label: "Analyzed", one: "analysis", many: "analyses" },
     { key: "edited", label: "Draft edited", one: "draft edit", many: "draft edits" },
-    { key: "autopilot", label: "Autopilot", one: "autopilot action", many: "autopilot actions" },
     { key: "milestone", label: "Approved and sent", one: "approval step", many: "approval steps" },
     { key: "failed", label: "Failed", one: "failure", many: "failures" },
   ];
@@ -52,11 +51,6 @@
         unknown: ["The outcome is unknown (network error or PayPal server error).", "failed"],
       }[sub.state];
       if (result) push(sub.finished_at, result[1], result[0]);
-    }
-    if (!DD.mode.demo && Array.isArray(item.autopilot_events)) {
-      for (const ev of item.autopilot_events) {
-        push(ev.created_at, ev.kind === "autopilot_failed" ? "failed" : "autopilot", ev.message);
-      }
     }
     return out;
   }
