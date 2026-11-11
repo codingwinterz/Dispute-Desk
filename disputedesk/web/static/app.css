@@ -1361,3 +1361,19 @@ main button.secondary.small { font-size: 11px; padding: 6px 10px; }
 .vc-arrow { color: var(--primary-text); font-weight: 700; }
 .vc-event { margin: 10px 0 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
 .case-timeline li.event .tl-dot { border-style: dashed; border-color: var(--seeded); }
+
+/* ---- case Q&A: read-only, grounded in numbered facts --------------------------------------------- */
+.qa-form { display: grid; gap: 8px; }
+.qa-form .approve-row { margin-top: 4px; }
+.qa-input {
+  display: block; width: 100%; font: inherit; line-height: 1.5; color: var(--text); background: var(--ground);
+  border: 1px solid var(--control-edge); border-radius: var(--r-sm); padding: 10px 12px; resize: vertical;
+}
+.qa-output { margin-top: 14px; }
+.qa-answer {
+  padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 3px solid var(--primary); border-radius: var(--r-sm);
+}
+.qa-answer p { margin: 0; line-height: 1.55; }
+.qa-cites { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.qa-cites .cite { margin-left: 0; }

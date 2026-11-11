@@ -18,7 +18,9 @@
   let graph3d = null;        // live three.js view; disposed before every re-render and on leaving
   let pendingGraph = null;   // a 3D view to mount once its container is in the page
   const MAX_DRAFT = 2000;    // matches the server's cap (disputedesk/drafts.py)
+  const MAX_QA = 500;        // matches the server's cap (disputedesk/qa.py)
   const RECORDED_EVENT = "recorded, simulated merchant event";  // demo mode: replayed from the snapshot
+  let qaState = { question: "", pending: false, result: null, error: "" };
 
   function svg(tag, attrs = {}, ...children) {
     const node = document.createElementNS(SVG, tag);
@@ -480,6 +482,88 @@
     ];
   }
 
+  // ---- read-only case Q&A (hidden in demo mode) -----------------------------------------
+
+  function qaPanel(d, rec) {
+    if (DD.mode.demo || !rec || rec.status !== "ok" || !(rec.facts && rec.facts.length)) return null;
+    const input = el("textarea", {
+      id: "qa-question", class: "qa-input", rows: "2", maxlength: String(MAX_QA),
+      placeholder: "For example: Was the parcel signed by the buyer?",
+    });
+    input.value = qaState.question;
+    const askButton = el("button", { class: "primary", type: "submit", text: "Ask" });
+    const out = el("div", { class: "qa-output", "aria-live": "polite" });
+
+    function renderQaOut() {
+      if (qaState.error) {
+        out.replaceChildren(el("div", { class: "result error", role: "alert" }, el("p", { text: qaState.error })));
+        return;
+      }
+      if (!qaState.result) {
+        out.replaceChildren();
+        return;
+      }
+      const cites = (qaState.result.cites || []).map((c) =>
+        el("a", { class: "cite", href: `#fact-${c}`, text: c, title: citeTitle(rec, c) }));
+      out.replaceChildren(
+        el("div", { class: "qa-answer" },
+          el("p", { text: qaState.result.answer }),
+          cites.length ? el("div", { class: "qa-cites" }, el("span", { class: "cap", text: "Cited facts:" }), ...cites) : null));
+    }
+
+    input.addEventListener("input", () => { qaState.question = input.value; });
+    const form = el("form", { class: "qa-form" },
+      el("label", { class: "hint", for: "qa-question", text: "Ask a question answered only from the numbered facts below." }),
+      input,
+      el("div", { class: "approve-row" }, askButton));
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const question = input.value.trim();
+      qaState.question = input.value;
+      if (!question) {
+        qaState.error = "Enter a question about this case first.";
+        qaState.result = null;
+        renderQaOut();
+        input.focus();
+        return;
+      }
+      qaState.pending = true;
+      qaState.error = "";
+      askButton.disabled = true;
+      askButton.textContent = "Asking…";
+      try {
+        const resp = await fetch(`/api/decisions/${encodeURIComponent(d.dispute_id)}/ask`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question }),
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          qaState.result = null;
+          qaState.error = body.message || body.error || `The server answered HTTP ${resp.status}.`;
+        } else {
+          qaState.result = body;
+          qaState.error = "";
+        }
+      } catch {
+        qaState.result = null;
+        qaState.error = "Can't reach the DisputeDesk server.";
+      } finally {
+        qaState.pending = false;
+        askButton.disabled = false;
+        askButton.textContent = "Ask";
+        renderQaOut();
+      }
+    });
+
+    renderQaOut();
+    return el("section", { class: "panel", "aria-labelledby": "qa-title" },
+      el("h2", { id: "qa-title", text: "Ask about this case" }),
+      form,
+      out);
+  }
+
   // ---- render loop -------------------------------------------------------------------
 
   // ---- per-case timeline (stored timestamps only) ------------------------------------------
@@ -605,7 +689,8 @@
     await DD.modeReady;
     const key = JSON.stringify(body);
     if (key === lastKey) return; // nothing changed; keep scroll position and any open anchor
-    if (editorDirty || dialogOpen) return;  // never replace unsaved edits or an open confirm dialog
+    const qaFocused = document.activeElement && document.activeElement.id === "qa-question";
+    if (editorDirty || dialogOpen || qaState.pending || qaFocused) return;  // never replace unsaved edits, an open dialog, or an active question
     lastKey = key;
     const { dispute, decision, draft, submit } = body;
     caseHistory = body.history || [];
@@ -622,7 +707,8 @@
     const left = el("div", { class: "case-col" }, ...panels.slice(1), attachmentsPanel(dispute.dispute_id, body.attachments));
     const right = el("div", { class: "case-col" }, ...((decision && decision.status === "ok" && graphPanel(decision)) || [
       el("section", { class: "panel" }, el("h2", { text: "Evidence path" }),
-        el("p", { class: "hint", text: "The graph path appears once the agent has a recommendation for this dispute." }))]));
+        el("p", { class: "hint", text: "The graph path appears once the agent has a recommendation for this dispute." }))]),
+      qaPanel(dispute, decision));
     disposeGraph();
     const callHead = el("div", { class: "stack-head case-call-head" },
       el("h2", {}, el("span", { text: "The agent's" }), el("span", { text: "call" })),

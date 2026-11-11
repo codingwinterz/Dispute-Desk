@@ -17,7 +17,7 @@ import shutil
 import sys
 import tempfile
 import threading
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Protocol
@@ -32,7 +32,7 @@ from pydantic import ValidationError
 from disputedesk.analyzer import Analyzer
 from disputedesk.attachments import SAFE_HEADERS, AttachmentError, AttachmentFetcher, buyer_documents, listing
 from disputedesk.auth import TokenProvider
-from disputedesk.config import LOG_DIR, Settings, load_agent_settings, load_settings, targets
+from disputedesk.config import DEFAULT_LLM_MODEL, LOG_DIR, Settings, load_agent_settings, load_settings, targets
 from disputedesk.decision import SANDBOX_NOTE
 from disputedesk.decision_store import DecisionStore
 from disputedesk.demo import DEMO_MESSAGE, SNAPSHOT_PATH, load_snapshot, read_snapshot
@@ -46,6 +46,7 @@ from disputedesk.graph import GraphStore, connect, context_to_facts
 from disputedesk.http_log import make_client
 from disputedesk.policies import PolicySettings, PolicyStore, build_rules
 from disputedesk.poller import DisputePoller
+from disputedesk.qa import MAX_QUESTION_CHARS, QAResult, answer_case_question
 from disputedesk.submissions import BLOCKING, SubmissionStore, SubmitError, Submitter
 
 log = logging.getLogger("disputedesk.webhooks")
@@ -159,6 +160,8 @@ def create_app(
     submitter: Submitter | None = None,
     attachments: AttachmentFetcher | None = None,
     demo: bool | None = None,
+    qa_fn: Callable[..., QAResult] | None = None,
+    llm_model: str | None = None,
 ) -> FastAPI:
     """Build the app. With no verifier, settings come from the environment and the real
     poller is started; tests inject their own pieces and get no poller unless they pass one.
@@ -232,10 +235,15 @@ def create_app(
         poll_client = DisputesClient(settings, TokenProvider(settings, poll_http), poll_http)
         poller = DisputePoller(poll_client, dispute_store, bus, LOG_DIR / "disputes", settings.poll_seconds,
                                secrets=secrets)
-    if analyzer is None and settings is not None:
-        agent = load_agent_settings()
-        analyzer = Analyzer(dispute_store, decision_store, lambda: GraphStore(connect(agent)), agent.llm_model,
-                            rules_provider=policy_store.rules)
+    qa_model: str | None = None
+    if not demo:
+        if analyzer is None and settings is not None:
+            agent = load_agent_settings()
+            analyzer = Analyzer(dispute_store, decision_store, lambda: GraphStore(connect(agent)), agent.llm_model,
+                                rules_provider=policy_store.rules)
+            qa_model = llm_model or agent.llm_model
+        else:
+            qa_model = llm_model or os.getenv("LLM_MODEL") or DEFAULT_LLM_MODEL
     if analyzer is not None:
         bus.subscribe(analyzer.on_event)
     if attachments is None and settings is not None:
@@ -370,6 +378,50 @@ def create_app(
                              "history": history, "events": events,
                              # Buyer attachments by index only (no names or links); none in demo mode.
                              "attachments": [] if demo else await run_in_threadpool(_attachment_list, dispute_id)})
+
+    @app.post("/api/decisions/{dispute_id}/ask")
+    async def ask_case_question(dispute_id: str, request: Request) -> JSONResponse:
+        """Read-only case Q&A grounded strictly in the case's stored numbered facts. Disabled in demo mode."""
+        if demo:
+            return JSONResponse({"error": "demo_mode", "message": DEMO_MESSAGE}, status_code=403)
+        refused = _refuse_write(request)
+        if refused:
+            return refused
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        raw_question = body.get("question") if isinstance(body, dict) else None
+        question = raw_question.strip() if isinstance(raw_question, str) else ""
+        if not question or len(question) > MAX_QUESTION_CHARS:
+            return JSONResponse(
+                {"error": "invalid_question",
+                 "message": f"Enter a question between 1 and {MAX_QUESTION_CHARS} characters."},
+                status_code=422,
+            )
+        if await run_in_threadpool(dispute_store.summary, dispute_id) is None:
+            return JSONResponse({"error": "unknown dispute"}, status_code=404)
+        rec = await run_in_threadpool(decision_store.get, dispute_id)
+        facts = rec.get("facts") if rec and rec.get("status") == "ok" else None
+        if not facts:
+            return JSONResponse(
+                {"error": "no_facts", "message": "This case does not have numbered facts yet."},
+                status_code=409,
+            )
+        ask = qa_fn or answer_case_question
+        result = await run_in_threadpool(ask, dispute_id, question, facts, qa_model or DEFAULT_LLM_MODEL)
+        if result.status != "ok" or result.output is None:
+            return JSONResponse(
+                {"error": result.error or "qa_failed",
+                 "message": "Couldn't answer from the case facts right now. Check the server configuration and try again."},
+                status_code=502,
+            )
+        return JSONResponse({
+            "answer": result.output.answer,
+            "cites": result.output.cites,
+            "answered": result.output.answered,
+            "model": result.model,
+        })
 
     def _attachment_list(dispute_id: str) -> list[dict[str, Any]]:
         return listing(dispute_store.get(dispute_id))
