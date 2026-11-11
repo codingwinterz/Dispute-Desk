@@ -252,6 +252,10 @@
     });
   }
 
+  const autopilotBar = document.getElementById("autopilot-bar");
+  const autopilot = DD.mountAutopilot(autopilotBar, { showToggle: true, onUpdate: refresh });
+  window.addEventListener("pagehide", () => { if (autopilot) autopilot.destroy(); });
+
   refresh();
   setInterval(refresh, POLL_MS);
 })();

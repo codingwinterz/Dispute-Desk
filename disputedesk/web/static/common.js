@@ -471,6 +471,245 @@ const DD = (() => {
       el("span", { text: String(score) }), bar);
   }
 
+  // ---- P2 Autopilot controller (hidden and disabled in demo mode) -------------------------
+  const autopilotInFlight = new Set();
+
+  function mountAutopilot(container, opts = {}) {
+    if (!container) return null;
+    const { disputeId = null, showToggle = true, onUpdate = null } = opts;
+    let disposed = false;
+    let state = null;
+    let syncedAt = 0;
+    let pollTimer = 0;
+    let tickTimer = 0;
+    let busy = false;
+    let statusMsg = "";
+
+    const remainingFor = (job) => {
+      const elapsed = Math.max(0, (Date.now() - syncedAt) / 1000);
+      return Math.max(0, (Number(job.remaining_seconds) || 0) - elapsed);
+    };
+
+    async function fetchState() {
+      if (disposed || mode.demo) return;
+      try {
+        const resp = await fetch("/api/autopilot", { cache: "no-store" });
+        if (!resp.ok) return;
+        state = await resp.json();
+        syncedAt = Date.now();
+        draw();
+      } catch {
+        // Ignore transient poll failures; live indicator handles server connectivity.
+      }
+    }
+
+    async function toggleEnabled(nextEnabled) {
+      if (busy || mode.demo) return;
+      busy = true;
+      statusMsg = "";
+      draw();
+      try {
+        const resp = await fetch("/api/autopilot/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: Boolean(nextEnabled) }),
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          statusMsg = body.message || body.error || `HTTP ${resp.status}`;
+        } else {
+          state = body;
+          syncedAt = Date.now();
+        }
+      } catch {
+        statusMsg = "Can't reach the DisputeDesk server.";
+      } finally {
+        busy = false;
+        draw();
+        if (onUpdate) onUpdate();
+      }
+    }
+
+    async function cancelJob(id) {
+      if (busy || mode.demo) return;
+      busy = true;
+      statusMsg = "";
+      draw();
+      try {
+        const resp = await fetch(`/api/autopilot/${encodeURIComponent(id)}/cancel`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          statusMsg = body.message || body.error || `HTTP ${resp.status}`;
+        } else {
+          state = body.autopilot || state;
+          syncedAt = Date.now();
+          statusMsg = `Cancelled auto-accept for ${id}.`;
+        }
+      } catch {
+        statusMsg = "Can't reach the DisputeDesk server.";
+      } finally {
+        busy = false;
+        draw();
+        if (onUpdate) onUpdate();
+      }
+    }
+
+    async function fireJob(job) {
+      if (disposed || mode.demo || autopilotInFlight.has(job.dispute_id)) return;
+      autopilotInFlight.add(job.dispute_id);
+      try {
+        const resp = await fetch(`/api/submissions/${encodeURIComponent(job.dispute_id)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            confirm: true,
+            action: "accept_claim",
+            text: state.accept_note,
+            autopilot: true,
+          }),
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok && body.error !== "countdown_active") {
+          statusMsg = body.message || body.error || `Auto-accept stopped (HTTP ${resp.status}).`;
+        } else if (resp.ok) {
+          statusMsg = `Auto-accepted ${job.dispute_id}.`;
+        }
+      } catch {
+        statusMsg = `Can't reach server to auto-accept ${job.dispute_id}.`;
+      } finally {
+        autopilotInFlight.delete(job.dispute_id);
+        await fetchState();
+        if (onUpdate) onUpdate();
+      }
+    }
+
+    function updateTicks() {
+      if (!state || mode.demo) return;
+      const pending = (state.pending || []).filter((j) => !disputeId || j.dispute_id === disputeId);
+      for (const job of pending) {
+        const rem = remainingFor(job);
+        const total = Math.max(1, Number(job.window_seconds) || 30);
+        const secs = Math.ceil(rem);
+        const pct = Math.max(0, Math.min(100, (rem / total) * 100));
+        const card = container.querySelector(`[data-autopilot-id="${CSS.escape(job.dispute_id)}"]`);
+        if (card) {
+          const timerEl = card.querySelector(".ap-timer");
+          const barEl = card.querySelector(".ap-bar-fill");
+          if (timerEl) timerEl.textContent = rem > 0 ? `Auto-accepting in ${secs}s` : "Sending to PayPal…";
+          if (barEl) barEl.style.width = `${pct.toFixed(1)}%`;
+        }
+        if (rem <= 0 && !autopilotInFlight.has(job.dispute_id)) {
+          fireJob(job);
+        }
+      }
+    }
+
+    function draw() {
+      if (disposed || mode.demo || !state) {
+        container.hidden = true;
+        container.replaceChildren();
+        return;
+      }
+      const pending = (state.pending || []).filter((j) => !disputeId || j.dispute_id === disputeId);
+      if (!showToggle && !pending.length && !statusMsg) {
+        container.hidden = true;
+        container.replaceChildren();
+        return;
+      }
+      container.hidden = false;
+      const children = [];
+      if (showToggle) {
+        const toggleId = `autopilot-toggle-${disputeId || "global"}`;
+        const input = el("input", {
+          type: "checkbox",
+          id: toggleId,
+          checked: Boolean(state.enabled),
+          disabled: busy,
+        });
+        input.addEventListener("change", () => toggleEnabled(input.checked));
+        const quotaPct = Math.max(0, Math.min(100, (state.daily_used / Math.max(1, state.daily_limit)) * 100));
+        children.push(
+          el("div", { class: "autopilot-head" },
+            el("div", { class: "autopilot-toggle-wrap" },
+              el("label", { class: "switch", for: toggleId }, input, el("span", { class: "track", "aria-hidden": "true" })),
+              el("div", {},
+                el("div", { class: "autopilot-title-row" },
+                  el("label", { class: "autopilot-title", for: toggleId, text: "P2 Autopilot" }),
+                  el("span", {
+                    class: `autopilot-pill${state.enabled ? " is-on" : ""}`,
+                    text: state.enabled ? "ARMED" : "OFF",
+                  })),
+                el("p", {
+                  class: "hint",
+                  text: "Opt-in only. Auto-accepts P2 disputes under $15 USD with no linked disputes and no external links in the buyer's claim, after a 30-second cancel window.",
+                }))),
+            el("div", { class: "autopilot-quota" },
+              el("span", { class: "cap", text: "Daily cap" }),
+              el("span", { class: "ap-quota-num num", text: `${state.daily_used} / ${state.daily_limit} today` }),
+              el("div", { class: "ap-quota-bar", "aria-hidden": "true" },
+                el("span", { class: "ap-quota-fill", style: `width:${quotaPct.toFixed(0)}%` })))));
+      }
+
+      if (pending.length) {
+        const cards = pending.map((job) => {
+          const rem = remainingFor(job);
+          const total = Math.max(1, Number(job.window_seconds) || 30);
+          const pct = Math.max(0, Math.min(100, (rem / total) * 100));
+          const cancelBtn = el("button", {
+            class: "secondary",
+            type: "button",
+            disabled: busy,
+            text: "Cancel",
+          });
+          cancelBtn.addEventListener("click", () => cancelJob(job.dispute_id));
+          const amt = job.amount_value !== null && job.amount_value !== undefined
+            ? `$${Number(job.amount_value).toFixed(2)} ${job.currency || "USD"}`
+            : "P2 claim";
+          return el("div", { class: "autopilot-countdown", "data-autopilot-id": job.dispute_id, role: "status", "aria-live": "polite" },
+            el("div", { class: "ap-cd-main" },
+              el("div", { class: "ap-cd-meta" },
+                el("span", { class: "autopilot-pill is-on", text: "30s window" }),
+                el("a", { class: "num ap-case-link", href: `/case/${encodeURIComponent(job.dispute_id)}`, text: job.dispute_id }),
+                el("span", { class: "num ap-amt", text: amt }),
+                el("span", { class: "ap-timer num", text: rem > 0 ? `Auto-accepting in ${Math.ceil(rem)}s` : "Sending to PayPal…" })),
+              cancelBtn),
+            el("div", { class: "ap-bar", "aria-hidden": "true" },
+              el("span", { class: "ap-bar-fill", style: `width:${pct.toFixed(1)}%` })));
+        });
+        children.push(el("div", { class: "autopilot-list" }, ...cards));
+      }
+
+      if (statusMsg) {
+        children.push(el("p", { class: "hint ap-status", role: "status", text: statusMsg }));
+      }
+      container.replaceChildren(...children);
+    }
+
+    modeReady.then((m) => {
+      if (disposed || m.demo) {
+        container.hidden = true;
+        container.replaceChildren();
+        return;
+      }
+      fetchState();
+      pollTimer = setInterval(() => { if (!document.hidden) fetchState(); }, 3000);
+      tickTimer = setInterval(updateTicks, 250);
+    });
+
+    return {
+      refresh: fetchState,
+      destroy: () => {
+        disposed = true;
+        clearInterval(pollTimer);
+        clearInterval(tickTimer);
+      },
+    };
+  }
+
   return { el, color, rgba, colorNum, dueSoonChip, isOverdue, revealStaggered, eyebrow, eyebrowWith, statChip, sumAmounts, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, groupDisputes, deadlineNode, statusBadge, STATUS_HELP, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
-           dueDate, sourceTag, decisionChip, riskNode, tick, pollChipText, detectionText };
+           dueDate, sourceTag, decisionChip, riskNode, tick, pollChipText, detectionText, mountAutopilot };
 })();

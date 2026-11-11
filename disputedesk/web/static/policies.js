@@ -214,6 +214,8 @@
         button.disabled = true;
         button.textContent = DD.DEMO_LABEL;
         setStatus("Recorded sandbox data: you can try the switches and see the rule text change, but nothing is saved.");
+      } else {
+        DD.mountAutopilot(document.getElementById("autopilot-settings"), { showToggle: true });
       }
     } catch (err) {
       DD.live(false);
