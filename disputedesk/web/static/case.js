@@ -20,7 +20,7 @@
   const MAX_DRAFT = 2000;    // matches the server's cap (disputedesk/drafts.py)
   const MAX_QA = 500;        // matches the server's cap (disputedesk/qa.py)
   const RECORDED_EVENT = "recorded, simulated merchant event";  // demo mode: replayed from the snapshot
-  let qaState = { question: "", pending: false, result: null, error: "" };
+  let qaState = { question: "", askedQuestion: "", pending: false, result: null, error: "" };
 
   function svg(tag, attrs = {}, ...children) {
     const node = document.createElementNS(SVG, tag);
@@ -495,20 +495,24 @@
     const out = el("div", { class: "qa-output", "aria-live": "polite" });
 
     function renderQaOut() {
-      if (qaState.error) {
-        out.replaceChildren(el("div", { class: "result error", role: "alert" }, el("p", { text: qaState.error })));
-        return;
+      const items = [];
+      if (qaState.askedQuestion) {
+        items.push(el("div", { class: "qa-question-bubble" },
+          el("span", { class: "cap", text: "You asked" }),
+          el("p", { text: qaState.askedQuestion })));
       }
-      if (!qaState.result) {
-        out.replaceChildren();
-        return;
-      }
-      const cites = (qaState.result.cites || []).map((c) =>
-        el("a", { class: "cite", href: `#fact-${c}`, text: c, title: citeTitle(rec, c) }));
-      out.replaceChildren(
-        el("div", { class: "qa-answer" },
+      if (qaState.pending) {
+        items.push(el("p", { class: "hint", text: "Checking the numbered facts…" }));
+      } else if (qaState.error) {
+        items.push(el("div", { class: "result error", role: "alert" }, el("p", { text: qaState.error })));
+      } else if (qaState.result) {
+        const cites = (qaState.result.cites || []).map((c) =>
+          el("a", { class: "cite", href: `#fact-${c}`, text: c, title: citeTitle(rec, c) }));
+        items.push(el("div", { class: "qa-answer" },
           el("p", { text: qaState.result.answer }),
           cites.length ? el("div", { class: "qa-cites" }, el("span", { class: "cap", text: "Cited facts:" }), ...cites) : null));
+      }
+      out.replaceChildren(...items);
     }
 
     input.addEventListener("input", () => { qaState.question = input.value; });
@@ -520,18 +524,23 @@
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const question = input.value.trim();
-      qaState.question = input.value;
       if (!question) {
+        qaState.question = input.value;
         qaState.error = "Enter a question about this case first.";
         qaState.result = null;
         renderQaOut();
         input.focus();
         return;
       }
+      qaState.askedQuestion = question;
+      qaState.question = "";
+      input.value = "";
       qaState.pending = true;
+      qaState.result = null;
       qaState.error = "";
       askButton.disabled = true;
       askButton.textContent = "Asking…";
+      renderQaOut();
       try {
         const resp = await fetch(`/api/decisions/${encodeURIComponent(d.dispute_id)}/ask`, {
           method: "POST",
