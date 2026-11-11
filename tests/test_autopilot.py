@@ -284,30 +284,51 @@ def test_six_armed_with_limit_five_gives_five_shadow_done_and_one_capped(env):
 
 
 def test_two_simultaneous_executions_produce_one_audit_and_one_dry_run(env):
-    did = "PP-R-RACE-1"
-    env["fake_client"].disputes[did] = _seed_case(env["stores"], did, value="11.00")
-    env["ap"].set_enabled(True)
-    env["ap"].on_decision(did)
-    env["clock"][0] += timedelta(seconds=31)
+    # Two AutopilotStore instances = two SQLite connections to the same file, each with its own
+    # Python lock, so only BEGIN IMMEDIATE and the guarded UPDATEs can serialise the two claims.
+    # The second store is opened before arming: opening a store marks already-armed jobs stale.
+    d, dec, pol, _dr, sub = env["stores"]
+    other_store = AutopilotStore(env["db"], boot_id="boot-other", now_fn=lambda: env["clock"][0])
+    try:
+        other_ap = Autopilot(other_store, d, dec, pol, sub, dry_run=env["ap"]._dry_run,
+                             fetch_fresh=env["fake_client"].get_dispute)
+        assert other_store._db is not env["ap_store"]._db and other_store._lock is not env["ap_store"]._lock
 
-    barrier = threading.Barrier(2)
-    results: list[int] = []
+        did = "PP-R-RACE-1"
+        env["fake_client"].disputes[did] = _seed_case(env["stores"], did, value="11.00")
+        env["ap"].set_enabled(True)
+        env["ap"].on_decision(did)
+        env["clock"][0] += timedelta(seconds=31)
 
-    def run_tick():
-        barrier.wait()
-        results.append(env["ap"].tick())
+        barrier = threading.Barrier(2)
+        results: list[int] = []
+        errors: list[BaseException] = []
 
-    t1 = threading.Thread(target=run_tick)
-    t2 = threading.Thread(target=run_tick)
-    t1.start()
-    t2.start()
-    t1.join()
-    t2.join()
+        def run_tick(ap):
+            try:
+                barrier.wait()
+                results.append(ap.tick())
+            except BaseException as exc:  # surfaced below; a failure must fail the test, not vanish
+                errors.append(exc)
 
-    assert sorted(results) == [0, 1]
-    assert env["dry_runs"] == [did]
-    assert env["fake_client"].send_action_calls == []
-    assert [a["kind"] for a in env["ap_store"].audit_for(did)] == ["armed", "executing", "shadow_done"]
+        t1 = threading.Thread(target=run_tick, args=(env["ap"],))
+        t2 = threading.Thread(target=run_tick, args=(other_ap,))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert errors == []
+        assert sorted(results) == [0, 1]
+        assert env["dry_runs"] == [did]
+        assert env["fake_client"].send_action_calls == []
+        kinds = [a["kind"] for a in env["ap_store"].audit_for(did)]
+        assert kinds == ["armed", "executing", "shadow_done"]
+        assert [a["kind"] for a in other_store.audit_for(did)] == kinds  # both connections see one history
+        assert env["ap_store"].daily_used() == 1  # the loser's cap slot rolled back with its claim
+        assert env["ap_store"].settings()["enabled"] is True  # no breaker trip from lock contention
+    finally:
+        other_store.close()
 
 
 def test_execution_rechecks_fresh_status_and_decision_changes(env):

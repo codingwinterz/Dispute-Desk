@@ -93,12 +93,51 @@ def has_buyer_external_links(dispute: dict[str, Any]) -> bool:
     return any(isinstance(dispute.get(k), str) and _URL_RE.search(dispute[k]) for k in ("buyer_note", "reason_note", "note"))
 
 
-def amount_usd(dispute: dict[str, Any]) -> tuple[float | None, str | None]:
-    money = dispute.get("dispute_amount") or {}
+def amount_usd(dispute: Any) -> tuple[float | None, str | None]:
+    """(value, currency) from dispute_amount; (None, None) for any malformed shape. Never raises."""
+    money = dispute.get("dispute_amount") if isinstance(dispute, dict) else None
+    if not isinstance(money, dict):
+        return None, None
+    currency = money.get("currency_code") if isinstance(money.get("currency_code"), str) else None
     try:
-        return float(money["value"]), money.get("currency_code")
+        return float(money["value"]), currency
     except (KeyError, TypeError, ValueError):
-        return None, money.get("currency_code")
+        return None, currency
+
+
+def _malformed(dispute: dict[str, Any], decision: dict[str, Any]) -> bool:
+    """True when a field eligibility reads has the wrong type. Missing (None) fields are judged by the rules."""
+    reasoning = decision.get("reasoning")
+    if reasoning is not None:
+        if not isinstance(reasoning, list):
+            return True
+        for point in reasoning:
+            if not isinstance(point, dict):
+                return True
+            cites = point.get("cites")
+            if cites is not None and (not isinstance(cites, list) or not all(isinstance(c, str) for c in cites)):
+                return True
+    for key in ("status", "decision"):
+        if decision.get(key) is not None and not isinstance(decision.get(key), str):
+            return True
+    if dispute.get("dispute_amount") is not None and not isinstance(dispute.get("dispute_amount"), dict):
+        return True
+    for key in ("status", "dispute_life_cycle_stage"):
+        if dispute.get(key) is not None and not isinstance(dispute.get(key), str):
+            return True
+    for key in ("links", "messages", "evidences"):
+        if dispute.get(key) is not None and not isinstance(dispute.get(key), list):
+            return True
+    # Buyer messages and evidence entries, and their documents, must be objects: a document list that
+    # isn't one could hide an attachment from the buyer-documents check.
+    for key in ("messages", "evidences"):
+        for item in dispute.get(key) or []:
+            if not isinstance(item, dict):
+                return True
+            docs = item.get("documents")
+            if docs is not None and (not isinstance(docs, list) or not all(isinstance(doc, dict) for doc in docs)):
+                return True
+    return False
 
 
 def _has_accept_link(dispute: dict[str, Any]) -> bool:
@@ -111,11 +150,23 @@ def p2_eligibility(
     policy: PolicySettings,
     submission: dict[str, Any] | None,
 ) -> tuple[bool, str | None]:
-    """(eligible, reason_code_if_not). Every refusal names why, for the audit trail and the case page."""
+    """(eligible, reason_code_if_not). Every refusal names why, for the audit trail and the case page.
+    Never raises: a wrongly typed field is "malformed_record", and so is anything unexpected below."""
+    try:
+        return _p2_eligibility(dispute, decision, policy, submission)
+    except Exception:  # fail closed on any shape the explicit checks did not foresee
+        return False, "malformed_record"
+
+
+def _p2_eligibility(dispute: Any, decision: Any, policy: PolicySettings, submission: Any) -> tuple[bool, str | None]:
     if not policy.accept_under_enabled:
         return False, "p2_disabled"
     if not dispute or not decision:
         return False, "missing_decision"
+    if not isinstance(dispute, dict) or not isinstance(decision, dict) or _malformed(dispute, decision):
+        return False, "malformed_record"
+    if submission is not None and not isinstance(submission, dict):
+        return False, "malformed_record"
     if decision.get("status") != "ok" or decision.get("decision") != "ACCEPT":
         return False, "not_accept_decision"
     cited = {c for p in (decision.get("reasoning") or []) for c in (p.get("cites") or [])}
@@ -128,7 +179,12 @@ def p2_eligibility(
         return False, "invalid_amount"
     if amount >= MAX_AMOUNT_USD or amount >= policy.accept_under_amount:
         return False, "amount_not_under_limit"
-    if (decision.get("graph_context") or {}).get("linked_disputes"):
+    # Fail closed: without a graph context that lists linked disputes, "none linked" can't be shown.
+    ctx = decision.get("graph_context")
+    linked = ctx.get("linked_disputes") if isinstance(ctx, dict) else None
+    if not isinstance(linked, list):
+        return False, "linked_disputes_unknown"
+    if linked:
         return False, "linked_disputes_present"
     if has_buyer_external_links(dispute):
         return False, "external_link_in_claim"
@@ -363,12 +419,13 @@ class AutopilotStore:
             return self._format(self._job_row(dispute_id), now)
         return None
 
-    def claim_due(self) -> list[dict[str, Any]]:
+    def claim_due(self, into: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
         """armed -> executing for every due job, taking a daily-cap slot in the same transaction;
-        armed -> capped when the day's slots are gone. Returns the claimed jobs."""
+        armed -> capped when the day's slots are gone. Returns the claimed jobs. Each claim is appended
+        to `into` as soon as it commits, so a caller still knows every executing job if a later claim raises."""
         now = self._now()
         day = now.date().isoformat()
-        claimed: list[dict[str, Any]] = []
+        claimed: list[dict[str, Any]] = into if into is not None else []
         with self._lock:
             due = self._db.execute(
                 "SELECT dispute_id, amount_value, currency FROM autopilot_v2_jobs"
@@ -613,16 +670,57 @@ class Autopilot:
 
     # -- execution ------------------------------------------------------------------------
 
+    def _active(self) -> bool:
+        """Enabled and not tripped, read fresh from the store."""
+        st = self.store.settings()
+        return bool(st["enabled"]) and not st["tripped_at"]
+
     def tick(self) -> int:
-        """One scheduler pass: claim every due job and run it. Returns how many were claimed."""
-        if not self.store.settings()["enabled"]:
+        """One scheduler pass: claim every due job, then run each one after re-reading the enabled flag and
+        the breaker. No claimed job is left 'executing' when the pass returns: after a trip or an error
+        the rest are cancelled (executing -> cancelled, one audit row each). Returns how many were claimed."""
+        if not self._active():
             return 0
-        claimed = self.store.claim_due()
-        for job in claimed:
-            self._execute(job)
+        claimed: list[dict[str, Any]] = []
+        try:
+            self.store.claim_due(into=claimed)
+        except Exception as exc:
+            log.error("autopilot claim failed: %s", type(exc).__name__)
+            self._trip(f"exception:{type(exc).__name__}")
+            self._cancel_rest(claimed, "claim_failed")
+            return len(claimed)
+        for i, job in enumerate(claimed):
+            try:
+                active = self._active()
+            except Exception as exc:
+                self._trip(f"exception:{type(exc).__name__}")
+                active = False
+            if not active:
+                self._cancel_rest(claimed[i:], "breaker_tripped")
+                break
+            if not self._execute(job):
+                self._cancel_rest(claimed[i + 1:], "breaker_tripped")
+                break
         return len(claimed)
 
-    def _execute(self, job: dict[str, Any]) -> None:
+    def _trip(self, reason: str) -> None:
+        try:
+            self.store.trip(reason, "breaker")
+        except Exception:
+            log.exception("autopilot: could not record the trip")
+
+    def _cancel_rest(self, jobs: list[dict[str, Any]], reason: str) -> None:
+        for job in jobs:
+            try:
+                self.store.finish(job["dispute_id"], "cancelled", reason,
+                                  f"Autopilot preview cancelled before it ran ({reason.replace('_', ' ')}). "
+                                  "Nothing was sent.", actor="breaker")
+            except Exception:
+                log.exception("autopilot: could not cancel dispute=%s", job.get("dispute_id"))
+
+    def _execute(self, job: dict[str, Any]) -> bool:
+        """Run one claimed job. True when it ended normally (shadow_done or a stand-down); False when it
+        raised, in which case the job is marked failed and the breaker is tripped."""
         did = job["dispute_id"]
         try:
             dispute, decision, policy, _policy_at, submission = self._inputs(did)
@@ -641,17 +739,22 @@ class Autopilot:
             if not ok:
                 self.store.finish(did, "cancelled", reason, f"Autopilot preview stood down at execution time "
                                                             f"({(reason or 'not eligible').replace('_', ' ')}). Nothing was sent.")
-                return
+                return True
             out = self._dry_run(did)
             if not isinstance(out, dict) or not out.get("request"):
                 raise RuntimeError("dry_run_empty")
             self.store.finish(did, "shadow_done", None, f"Autopilot preview: would have accepted {did}. Nothing was sent.")
+            return True
         except Exception as exc:
             code = type(exc).__name__ if not isinstance(exc, RuntimeError) else str(exc) or "RuntimeError"
             log.error("autopilot preview failed dispute=%s: %s", did, code)
-            self.store.finish(did, "failed", code, f"Autopilot preview failed ({code}); Autopilot preview switched off. "
-                                                   "Nothing was sent.")
-            self.store.trip(f"exception:{code}", "breaker")
+            try:
+                self.store.finish(did, "failed", code, f"Autopilot preview failed ({code}); Autopilot preview switched off. "
+                                                       "Nothing was sent.")
+            except Exception:
+                log.exception("autopilot: could not mark dispute=%s failed", did)
+            self._trip(f"exception:{code}")
+            return False
 
     # -- thread ---------------------------------------------------------------------------
 

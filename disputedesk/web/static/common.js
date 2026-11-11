@@ -485,31 +485,46 @@ const DD = (() => {
       title: "Immediately switch off Autopilot preview and cancel any armed countdowns",
       text: "Stop Autopilot",
     });
-    statusBar.prepend(btn);
+    // Shown only when a kill request fails; text only, never markup.
+    const err = el("span", { class: "autopilot-kill-error error-text", role: "alert", hidden: true });
+    statusBar.prepend(btn, err);
+
+    function showError(text) {
+      err.textContent = text;
+      err.hidden = !text;
+    }
 
     async function sync() {
-      if (mode.demo || mode.scratch) { btn.hidden = true; return; }
+      if (mode.demo || mode.scratch) { btn.hidden = true; showError(""); return; }
       try {
         const resp = await fetch("/api/autopilot", { cache: "no-store" });
         if (!resp.ok) { btn.hidden = true; return; }
         const st = await resp.json();
         const active = Boolean(st.enabled || (st.pending && st.pending.length));
         btn.hidden = !active;
+        if (!active) showError("");
       } catch {
         // Keep last state on transient failure.
       }
     }
 
+    // Hidden only after the server confirms the kill; on any failure the button stays and says why.
     btn.addEventListener("click", async () => {
       btn.disabled = true;
+      showError("");
       try {
-        await fetch("/api/autopilot/kill", {
+        const resp = await fetch("/api/autopilot/kill", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: "{}",
         });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(body.message || body.error || `The server answered HTTP ${resp.status}.`);
         btn.hidden = true;
         window.dispatchEvent(new CustomEvent("dd:autopilot-changed"));
+      } catch (e) {
+        btn.hidden = false;
+        showError(`Autopilot was not stopped: ${e instanceof TypeError ? "can't reach the DisputeDesk server." : e.message}`);
       } finally {
         btn.disabled = false;
       }
@@ -518,6 +533,7 @@ const DD = (() => {
     window.addEventListener("dd:autopilot-changed", sync);
     sync();
     setInterval(() => { if (!document.hidden) sync(); }, 5000);
+    return { button: btn, error: err, sync };
   }
 
   function mountAutopilot(container, opts = {}) {
@@ -717,5 +733,5 @@ const DD = (() => {
   }
 
   return { el, color, rgba, colorNum, dueSoonChip, isOverdue, revealStaggered, eyebrow, eyebrowWith, statChip, sumAmounts, renderNav, live, mode, modeReady, DEMO_LABEL, clock, recordedLabel, ageText, reducedMotion, reveal, topReason, caseCaption, groupDisputes, deadlineNode, statusBadge, STATUS_HELP, reasonLabel, statusLabel, statusClass, stageLabel, money, countdown, countdownNode,
-           dueDate, sourceTag, decisionChip, riskNode, tick, pollChipText, detectionText, mountAutopilot };
+           dueDate, sourceTag, decisionChip, riskNode, tick, pollChipText, detectionText, mountTopbarKillSwitch, mountAutopilot };
 })();
