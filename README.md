@@ -6,6 +6,10 @@ This repository only proves that the real PayPal sandbox dispute flow works.
 
 Small sellers have days to answer a PayPal dispute and often don’t know what evidence to send.
 
+# Working Demo
+
+https://youtu.be/VnGo7TvdAYk?si=xZXQg7URv6AHLTBl
+
 ## How it works
 
 1. A customer files a dispute in the PayPal sandbox.
