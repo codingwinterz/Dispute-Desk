@@ -49,11 +49,36 @@
   --gutter: 24px;
   --font: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   /* Display face for headlines and big numbers. Loaded with display=optional: if it isn't ready in the
-     browser's short block period, these fallbacks stay for the page's lifetime (no late swap, no shift). */
-  --font-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", "Liberation Sans Narrow", Impact, sans-serif;
+     browser's short block period, these fallbacks stay for the page's lifetime (no late swap, no shift).
+     The "DD Display Fallback" faces below are local fonts resized to the display face's width. */
+  --font-display: "Big Shoulders Display", "DD Display Fallback", "DD Display Fallback Impact", "DD Display Fallback Arial", "Arial Narrow","Roboto Condensed", "Liberation Sans Narrow", Impact, sans-serif;
   /* Faint grain on the page ground only (opaque panels cover it). Opacity is fixed at 0.035 in the SVG. */
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
   color-scheme: dark;
+}
+
+/* Metric-matched fallbacks for Big Shoulders Display, measured against its weight-900 file (Google Fonts v24) on
+   "DISPUTEDESK WAITING ON YOU 0123456789 OVERDUE DEFEND ACCEPT". size-adjust scales the local face to the display
+   face's width; the overrides are the display face's ascent 0.984 / descent 0.213 / line gap 0, divided by
+   size-adjust. A face whose local() fonts are all missing is skipped and the next family in the stack is tried.
+   The weight range stops the browser synthesising a bolder (wider) face for 800 and 900. */
+@font-face {
+  font-family: "DD Display Fallback";
+  src: local("Arial Narrow Bold"), local("ArialNarrow-Bold"), local("Liberation Sans Narrow Bold"), local("LiberationSansNarrow-Bold");
+  font-weight: 600 900; font-display: swap;
+  size-adjust: 87.4%; ascent-override: 112.6%; descent-override: 24.4%; line-gap-override: 0%;
+}
+@font-face {
+  font-family: "DD Display Fallback Impact";
+  src: local("Impact");
+  font-weight: 600 900; font-display: swap;
+  size-adjust: 94.8%; ascent-override: 103.8%; descent-override: 22.5%; line-gap-override: 0%;
+}
+@font-face {
+  font-family: "DD Display Fallback Arial";
+  src: local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold"), local("LiberationSans-Bold");
+  font-weight: 600 900; font-display: swap;
+  size-adjust: 71.6%; ascent-override: 137.3%; descent-override: 29.7%; line-gap-override: 0%;
 }
 
 * { box-sizing: border-box; }
@@ -102,9 +127,15 @@ body.shell > main { grid-area: main; width: 100%; min-width: 0; overflow-x: clip
   color: var(--text); text-decoration: none; font-family: var(--font-display); font-weight: 900;
   font-size: 24px; letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap; min-width: 0;
 }
-/* The fallback faces are wider than the display face: keep the brand inside the sidebar either way. */
+/* The fallback faces are wider than the display face: keep the brand inside the sidebar either way.
+   Fixed size (no vw), never wider than the sidebar, and held at its content size: in the column sidebar a
+   growing flex basis would stretch it vertically. At 22px the text needs about 112px in the display face and
+   at most about 117px in a metric-matched fallback; the 232px sidebar leaves about 134px even with a scrollbar. */
 .sidebar { overflow-x: hidden; }
-.sidebar .brand { font-size: clamp(18px, 1.6vw, 24px); }
+.sidebar .brand {
+  font-size: 22px; flex: 0 0 auto; max-width: 100%;
+  overflow: hidden; text-overflow: clip;
+}
 .sidebar .brand .tab, .site-tab {
   width: 18px; height: 14px; flex-shrink: 0; background: var(--primary);
   border-radius: 3px 3px 0 0; clip-path: polygon(0 30%, 40% 30%, 52% 0, 100% 0, 100% 100%, 0 100%);
@@ -113,6 +144,7 @@ body.shell > main { grid-area: main; width: 100%; min-width: 0; overflow-x: clip
 .side-links a {
   position: relative; display: block; padding: 9px 12px 9px 16px; border-radius: var(--r-sm);
   color: var(--muted); text-decoration: none; font-weight: 600;
+  min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: clip;
 }
 .side-links a:hover { color: var(--text); background: var(--surface); }
 .side-links a[aria-current="page"] {
