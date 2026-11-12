@@ -102,7 +102,8 @@ py -3.12 -m venv .venv
 
 Then open http://127.0.0.1:8000/ (the Overview; the queue is at http://127.0.0.1:8000/queue). (macOS/Linux: `python3.12 -m venv .venv`, then `.venv/bin/python`.)
 If port 8000 is in use, run `scripts/demo.py --port 8010` and open that port instead.
-The top bar shows **Demo data**. The snapshot includes one simulated carrier event on the YOV dispute, labelled as a
+The top bar shows **Demo data**. In demo mode, **Take the 60-second tour** on the Overview walks through six pages (read-only; it sends nothing).
+The snapshot includes one simulated carrier event on the YOV dispute, labelled as a
 recorded, simulated merchant event. Buyer and account identifiers in the snapshot are anonymised placeholders.
 
 ## Full mode (your own PayPal sandbox)
