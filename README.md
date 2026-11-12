@@ -7,7 +7,7 @@ This repository only proves that the real PayPal sandbox dispute flow works.
 ## How it works
 
 1. A customer files a dispute in the PayPal sandbox.
-2. DisputeDesk detects it by polling the Disputes API every 10 seconds, and a signature-checked webhook
+2. DisputeDesk detects it by polling the Disputes API about every 10 seconds, and a signature-checked webhook
    receiver feeds the same pipeline.
 3. A merchant graph (FalkorDB) turns PayPal's records and the merchant's shipment and device records into
    numbered facts F1, F2 and so on.
@@ -20,7 +20,7 @@ The agent recommends; nothing is sent to PayPal until the merchant approves. Aut
 
 ```mermaid
 flowchart LR
-  A["PayPal sandbox<br/>customer files a dispute"] --> B["Poller<br/>checks every 10 s"]
+  A["PayPal sandbox<br/>customer files a dispute"] --> B["Poller<br/>checks about every 10 s"]
   A -.-> W["Webhook receiver<br/>signature-checked"]
   B --> S["Shared pipeline (SQLite)<br/>each dispute claimed once"]
   W -.-> S
@@ -102,7 +102,7 @@ py -3.12 -m venv .venv
 
 Then open http://127.0.0.1:8000/ (the Overview; the queue is at http://127.0.0.1:8000/queue). (macOS/Linux: `python3.12 -m venv .venv`, then `.venv/bin/python`.)
 If port 8000 is in use, run `scripts/demo.py --port 8010` and open that port instead.
-The top bar shows **Demo data**. In demo mode, **Take the 60-second tour** on the Overview walks through six pages (read-only; it sends nothing).
+The top bar shows **Demo data**. In demo mode, **Take the 60-second tour** on the Overview walks through six steps (read-only; it sends nothing).
 The snapshot includes one simulated carrier event on the YOV dispute, labelled as a
 recorded, simulated merchant event. Buyer and account identifiers in the snapshot are anonymised placeholders.
 
@@ -140,7 +140,7 @@ picks them up within `POLL_SECONDS`.
 | Part | Status |
 |---|---|
 | Disputes, statuses and deadlines | Real: PayPal sandbox Disputes API |
-| Detection | Real: polling every 10 seconds |
+| Detection | Real: polling about every 10 seconds |
 | Webhook receiver | Built and signature-checked. No dispute webhook was observed in the sandbox |
 | Graph queries, Gemini decision step, policy rules | Real: run live on the data below |
 | Defend | Verified live on one dispute: PayPal accepted the evidence and moved it to UNDER_REVIEW. No outcome observed |
@@ -314,7 +314,7 @@ device records are sandbox test data. Once a response is sent, the draft can't c
 
 Writes (`PUT /api/policies`, `PUT /api/drafts/{id}`, `POST /api/policies/preview`,
 `POST /api/submissions/{id}`, `POST /api/attachments/{id}/{index}/describe`) accept JSON only, from this app's own pages (a foreign `Origin` is
-refused), and like every non-webhook route are local-only. Only `POST /api/submissions/{id}` calls
+refused), and like every non-webhook route are local-only. Only `POST /api/submissions/{id}` writes to
 PayPal.
 
 ```sh
