@@ -1,6 +1,6 @@
 # DisputeDesk
 
-An AI agent that decides whether to defend or settle PayPal disputes.
+An AI agent that recommends whether to defend or settle PayPal disputes.
 The agent recommends; nothing is sent to PayPal until the merchant approves. Autopilot preview never sends anything.
 This repository only proves that the real PayPal sandbox dispute flow works.
 
@@ -21,14 +21,62 @@ The agent recommends; nothing is sent to PayPal until the merchant approves. Aut
 ```mermaid
 flowchart LR
   A["PayPal sandbox<br/>customer files a dispute"] --> B["Poller<br/>checks every 10 s"]
-  W["Webhook receiver<br/>signature-checked"] -.-> B
-  B --> C["Merchant graph (FalkorDB)<br/>PayPal facts + simulated merchant records"]
-  C --> D["Agent (Gemini)<br/>Defend or Accept<br/>cites numbered facts and policy rules"]
+  A -.-> W["Webhook receiver<br/>signature-checked"]
+  B --> S["Shared pipeline (SQLite)<br/>each dispute claimed once"]
+  W -.-> S
+  S --> C["Merchant graph (FalkorDB)<br/>PayPal facts + simulated merchant records"]
+  C --> D["Agent (Gemini via LiteLLM)<br/>recommends Defend or Accept<br/>cites numbered facts and policy rules"]
   D --> E["Dashboard<br/>reasons, risk score, draft evidence"]
+  D -.-> AP["Autopilot preview<br/>no AI, dry run only, never sends"]
   E --> F{"Merchant approves?"}
   F -- "yes, after confirm" --> G["PayPal Disputes API<br/>provide evidence or accept claim"]
-  F -- no --> H["Nothing is sent"]
+  F -- no --> H["Nothing is sent to PayPal"]
 ```
+
+## How PayPal and AI are used
+
+Everything runs against the PayPal **sandbox**; there is no live base URL in the code.
+
+**PayPal (sandbox) calls the app makes**
+
+| Call | When |
+|---|---|
+| `POST /v1/oauth2/token` | Client-credentials token, cached until it expires |
+| `GET /v1/customer/disputes` (and `next` pages) | Every `POLL_SECONDS` (default 10) by the poller |
+| `GET /v1/customer/disputes/{id}` | For a new or changed dispute, and as a fresh read just before an approved submission |
+| `POST /v1/notifications/verify-webhook-signature` | For each incoming webhook, before it is trusted |
+| `GET` on a buyer attachment link | Live mode only, when the case page shows the attachment (https `api-m.sandbox.paypal.com` only, redirects off) |
+| `POST /v1/customer/disputes/{id}/provide-evidence` | Only after the merchant approves a Defend and confirms |
+| `POST /v1/customer/disputes/{id}/accept-claim` | Only after the merchant approves an Accept and confirms |
+
+- **Detection.** Polling and the signed-webhook receiver feed one deduplicating pipeline: claiming a dispute
+  is one atomic insert in SQLite, so each dispute is processed once, whichever path sees it first. No dispute
+  webhook was observed in the sandbox, so polling is the real detection path.
+- **Disputes are filed by hand** in the sandbox Resolution Center; the sandbox does not let an app create them.
+- The client also has make-offer, escalate and sandbox-only status helpers; only `scripts/sandbox_check.py`
+  uses them, never the app.
+
+**AI (Gemini via LiteLLM)**
+
+- **Recommendation (AI).** The decision step sends the case's numbered facts (`F1`…) and the policy rules
+  (`P1`…`P4`) to the configured model and asks for structured JSON: Defend or Accept, a risk score,
+  reasoning points and a draft evidence summary.
+- **Validation (plain code).** The reply is checked against a schema; every reasoning point must cite a
+  supplied fact ID or policy rule, and unknown IDs or forbidden words are rejected (one retry, then an error).
+- **Approval (human).** The agent recommends; the merchant reviews, can edit the draft, sees the exact
+  request in a dry run and confirms before anything is sent to PayPal.
+- **Ask about this case (AI).** Answers only from the case's numbered facts and must cite fact IDs. The facts
+  sent to the model include the buyer's sandbox payer ID, the checkout IP and the device hash.
+- **Plain code, no AI:** polling, webhook verification, deduplication, the graph query that builds the facts,
+  policy rules, deadlines, the approval checks, every PayPal call and the Autopilot preview. Autopilot
+  preview uses no AI and never sends anything.
+
+**Other tools and sponsor integrations**
+
+FastAPI (app and API), FalkorDB (merchant graph), SQLite (store), LiteLLM (model gateway), AG Grid
+Community (queue grid) and three.js (3D case graph). Render and the other sponsor tools are not used.
+
+Built solo, with AI coding assistants (Claude Code and Antigravity).
 
 ## Quick start: demo mode (no accounts, no keys)
 
@@ -219,7 +267,7 @@ policy rules, no drafts. The reply must cite supplied fact IDs; an unknown ID, a
 forbidden word fails validation, which is retried once and then reported as an error. It calls no tools
 and writes nothing, to the store or to PayPal. Questions are capped at 500 characters and each LLM call
 has a 30-second timeout. As in the decision step, the facts sent include the simulated shipment and
-checkout-device records and the buyer's sandbox payer ID.
+checkout-device records, the buyer's sandbox payer ID, the checkout IP and the device hash.
 
 ## Approving a response (PayPal writes)
 
@@ -268,7 +316,7 @@ curl http://127.0.0.1:8000/api/disputes
 
 ## Decision agent
 
-For each dispute with full details, the agent decides **DEFEND** or **ACCEPT**:
+For each dispute with full details, the agent recommends **DEFEND** or **ACCEPT**:
 
 1. The dispute is merged into the FalkorDB graph (`Customer -INITIATED-> Transaction -HAS_DISPUTE-> Dispute`,
    plus seeded `FULFILLED_BY -> Shipment` and `LOGGED_FROM -> Telemetry`).
@@ -334,4 +382,7 @@ the audit and Activity logs.
 
 ## What's next
 
-- **Autopilot live mode** — designed and not built (kept out of this shadow-only release; no live toggle, typed confirmation phrase, or live execution path exists).
+- **Autopilot live mode with typed confirmation** — designed, not built (kept out of this shadow-only release; no live toggle, typed confirmation phrase, or live execution path exists).
+- **Partial-refund offers** for inquiry-stage disputes (`make-offer`); not built.
+- **AI-derived evidence facts** (for example from buyer attachments) counted in the recommendation only after the merchant confirms them.
+- **A pilot with a real merchant**, using its own shipment and checkout records instead of simulated ones.
