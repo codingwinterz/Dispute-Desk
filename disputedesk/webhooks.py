@@ -47,6 +47,8 @@ from disputedesk.graph import GraphStore, connect, context_to_facts
 from disputedesk.http_log import make_client
 from disputedesk.policies import PolicySettings, PolicyStore, build_rules
 from disputedesk.poller import DisputePoller
+from disputedesk.image_describe import LABEL as IMAGE_DESCRIPTION_LABEL
+from disputedesk.image_describe import DescribeResult, ImageDescriptionStore, describe_image, image_sha256, model_accepts_images
 from disputedesk.qa import MAX_QUESTION_CHARS, QAResult, answer_case_question
 from disputedesk.submissions import BLOCKING, SubmissionStore, SubmitError, Submitter
 
@@ -165,6 +167,8 @@ def create_app(
     llm_model: str | None = None,
     autopilot_store: AutopilotStore | None = None,
     autopilot: Autopilot | None = None,
+    describe_fn: Callable[..., DescribeResult] | None = None,
+    image_store: ImageDescriptionStore | None = None,
 ) -> FastAPI:
     """Build the app. With no verifier, settings come from the environment and the real
     poller is started; tests inject their own pieces and get no poller unless they pass one.
@@ -263,6 +267,12 @@ def create_app(
                               submit_client, bus)
     scratch = bool(demo_info.get("scratch"))
     autopilot_blocked = bool(demo or scratch)
+    # Advisory image descriptions: live mode only (never demo or scratch), own table, never used in decisions.
+    describe_blocked = bool(demo or scratch)
+    if describe_blocked:
+        image_store = None
+    elif image_store is None:
+        image_store = ImageDescriptionStore(dispute_store.path)
     owns_autopilot_store = False
     if autopilot_blocked:
         autopilot_store = None
@@ -417,7 +427,10 @@ def create_app(
                              "autopilot_audit": [] if autopilot_blocked or autopilot_store is None
                              else await run_in_threadpool(autopilot_store.audit_for, dispute_id),
                              # Buyer attachments by index only (no names or links); none in demo mode.
-                             "attachments": [] if demo else await run_in_threadpool(_attachment_list, dispute_id)})
+                             "attachments": [] if demo else await run_in_threadpool(_attachment_list, dispute_id),
+                             # When a buyer image was described (advisory); timestamps only, no content.
+                             "image_descriptions": [] if image_store is None
+                             else await run_in_threadpool(image_store.for_dispute, dispute_id)})
 
     def _autopilot_refusal() -> JSONResponse | None:
         if demo:
@@ -545,6 +558,65 @@ def create_app(
             log.warning("attachment dispute=%s index=%d refused: %s", dispute_id, index, exc.code)
             return refuse(exc.code, exc.http, exc.message)
         return Response(content=body, media_type=content_type, headers=SAFE_HEADERS)
+
+    @app.post("/api/attachments/{dispute_id}/{index}/describe")
+    async def describe_buyer_image(dispute_id: str, index: int, request: Request) -> JSONResponse:
+        """Advisory AI description of one buyer image, on the merchant's click only. Live mode only.
+        Sends the model only the image and a fixed instruction; the result is never used in a decision."""
+        def refuse(code: str, status: int, message: str) -> JSONResponse:
+            return JSONResponse({"error": code, "message": message}, status_code=status, headers={"Cache-Control": "no-store"})
+        if demo:
+            return refuse("demo_mode", 403, DEMO_MESSAGE)
+        if scratch or image_store is None:
+            return refuse("scratch_mode" if scratch else "unavailable", 403,
+                          "Image descriptions are available in live mode only.")
+        refused = _refuse_write(request)
+        if refused:
+            return refused
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            return refuse("invalid_body", 422, "Send a JSON object.")
+        data = await run_in_threadpool(dispute_store.get, dispute_id)
+        if data is None:
+            return refuse("unknown dispute", 404, "There is no such dispute in the local store.")
+        links = buyer_documents(data)
+        if not 0 <= index < len(links):
+            return refuse("no_attachment", 404, "This dispute has no buyer attachment at that index.")
+        if not links[index]:
+            return refuse("not_available", 404, "Buyer attachment, not available to download.")
+        if attachments is None:
+            return refuse("not_configured", 503, "Attachment download is not set up in this server.")
+        model = qa_model or DEFAULT_LLM_MODEL
+        if describe_fn is None and not model_accepts_images(model):
+            return refuse("model_no_images", 409, "The configured model does not accept images.")
+        try:
+            image, content_type = await run_in_threadpool(attachments.fetch, links[index])
+        except AttachmentError as exc:
+            log.warning("describe dispute=%s index=%d attachment refused: %s", dispute_id, index, exc.code)
+            return refuse(exc.code, exc.http, exc.message)
+        digest = image_sha256(image)
+        cached = await run_in_threadpool(image_store.get, dispute_id, index, digest)
+        if cached is None:
+            run = describe_fn or describe_image
+            result = await run_in_threadpool(lambda: run(image, content_type, model,
+                                                         reserve=lambda: image_store.reserve_call(dispute_id)))
+            if result.status != "ok" or result.output is None:
+                log.warning("describe dispute=%s index=%d failed: %s", dispute_id, index, result.error)
+                if result.error == "daily_limit":
+                    return refuse("daily_limit", 429, "The daily limit for image descriptions is reached. Try again tomorrow.")
+                return refuse(result.error or "describe_failed", 502, "Couldn't describe the image right now. Try again later.")
+            cached = await run_in_threadpool(image_store.save, dispute_id, index, digest, result.output, result.model)
+            log.info("describe dispute=%s index=%d: relevance=%s", dispute_id, index, cached["relevance"])
+            fresh = True
+        else:
+            fresh = False
+        return JSONResponse({"label": IMAGE_DESCRIPTION_LABEL, "description": cached["description"],
+                             "relevance": cached["relevance"], "visible_text": cached["visible_text"],
+                             "model": cached["model"], "created_at": cached["created_at"], "cached": not fresh},
+                            headers={"Cache-Control": "no-store"})
 
     # --- approved responses to PayPal (the only PayPal writes) ------------------------
 
