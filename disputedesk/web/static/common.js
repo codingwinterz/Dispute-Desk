@@ -60,6 +60,7 @@ const DD = (() => {
       const recorded = m.recorded_at ? new Date(m.recorded_at).toLocaleString() : "an earlier session";
       topbar.querySelector(".topbar-status").prepend(el("span", { class: "demo-badge", title: `Recorded sandbox data from ${recorded}. Nothing is sent to PayPal.`, text: "Demo data" }));
       document.body.classList.add("is-demo");
+      document.body.append(el("script", { src: "/static/tour.js" }));  // demo-only guided tour
     });
   }
 

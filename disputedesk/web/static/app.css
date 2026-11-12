@@ -1430,3 +1430,21 @@ main button.secondary.small { font-size: 11px; padding: 6px 10px; }
 /* Kill switch failure text: red comes from the shared .error-text class, as for the poll chip. */
 .autopilot-kill-error { font-size: 12px; font-weight: 600; max-width: 340px; }
 .autopilot-kill-error[hidden] { display: none; }
+/* Demo-mode guided tour (tour.js, loaded only in demo mode): a small panel in the corner, never a modal. */
+.tour { position: fixed; right: 16px; bottom: 16px; z-index: 20; max-width: min(340px, calc(100vw - 32px)); }
+.tour.is-open {
+  display: grid; gap: 8px; padding: 14px 16px; max-height: calc(100vh - 96px); overflow: auto;
+  background: var(--surface); color: var(--text); border: 1px solid var(--control-edge); border-radius: var(--r-md);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--shade) 45%, transparent);
+}
+.tour-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tour-count { margin: 0; }
+.tour-title { margin: 0; font-size: 18px; }
+.tour-text { margin: 0; color: var(--muted); }
+.tour-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.tour-go { font-weight: 600; }
+.tour-overview { margin: 0 0 12px; }
+@media (prefers-reduced-motion: no-preference) {
+  .tour.is-open { animation: tour-in 160ms ease-out; }
+  @keyframes tour-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+}
