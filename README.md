@@ -45,7 +45,7 @@ Everything runs against the PayPal **sandbox**; there is no live base URL in the
 | `GET /v1/customer/disputes` (and `next` pages) | Every `POLL_SECONDS` (default 10) by the poller |
 | `GET /v1/customer/disputes/{id}` | For a new or changed dispute, and as a fresh read just before an approved submission |
 | `POST /v1/notifications/verify-webhook-signature` | For each incoming webhook, before it is trusted |
-| `GET` on a buyer attachment link | Live mode only, when the case page shows the attachment (https `api-m.sandbox.paypal.com` only, redirects off) |
+| `GET` on a buyer attachment link | Live mode only, when the case page shows the attachment or the merchant asks for an AI description (https `api-m.sandbox.paypal.com` only, redirects off) |
 | `POST /v1/customer/disputes/{id}/provide-evidence` | Only after the merchant approves a Defend and confirms |
 | `POST /v1/customer/disputes/{id}/accept-claim` | Only after the merchant approves an Accept and confirms |
 
@@ -67,6 +67,13 @@ Everything runs against the PayPal **sandbox**; there is no live base URL in the
   request in a dry run and confirms before anything is sent to PayPal.
 - **Ask about this case (AI).** Answers only from the case's numbered facts and must cite fact IDs. The facts
   sent to the model include the buyer's sandbox payer ID, the checkout IP and the device hash.
+- **Describe buyer image (AI, on request, live mode only).** When the merchant clicks "Describe with AI" under a
+  buyer attachment, a vision model describes that one image. The image is sent to the configured LLM provider
+  with a fixed instruction and nothing else: no dispute facts, no buyer text, no file names. The reply is
+  validated (length caps, banned words, no verdicts or instructions), cached by the image's SHA-256 (the image
+  is never stored) and capped at 3 fresh calls per dispute and 20 per day. The output is advisory and
+  untrusted, and is never used in the recommendation, the draft, the approval or Autopilot. Disabled in demo
+  and scratch modes.
 - **Plain code, no AI:** polling, webhook verification, deduplication, the graph query that builds the facts,
   policy rules, deadlines, the approval checks, every PayPal call and the Autopilot preview. Autopilot
   preview uses no AI and never sends anything.
@@ -140,8 +147,9 @@ picks them up within `POLL_SECONDS`.
 | Shipment, device, IP and earlier-dispute records | Simulated merchant data, tagged "seeded" |
 | Carrier-scan merchant events | Simulated |
 | Demo snapshot | Recorded and anonymised; it includes one simulated carrier event on the YOV dispute |
-| Buyer attachments | Live mode only, where PayPal provides a download link; never analysed by the agent |
-| Partial offers; reading attachment contents | Not built |
+| Buyer attachments | Live mode only, where PayPal provides a download link; never used by the agent's recommendation |
+| AI description of a buyer image | Live mode only, on the merchant's click; advisory and unverified, never used in the recommendation |
+| Partial offers; using attachment contents in the recommendation | Not built |
 
 Sandbox only. There are no live credentials and no live base URL anywhere in this code.
 
@@ -168,6 +176,7 @@ Sandbox only. There are no live credentials and no live base URL anywhere in thi
 - `disputedesk/decision.py`: LiteLLM decision step with schema validation and citation checks
 - `disputedesk/decision_store.py`: SQLite store of decisions
 - `disputedesk/analyzer.py`: worker thread that runs decisions automatically
+- `disputedesk/image_describe.py`: advisory AI description of one buyer image (on request; own cache table; never used in decisions)
 - `disputedesk/autopilot.py`: shadow-only Autopilot preview state machine, runner, circuit breaker, and audit log
 - `scripts/sandbox_check.py`: step-by-step check against the real sandbox (not part of pytest)
 - `scripts/preflight.py`: read-only environment check (.env, FalkorDB, sandbox-only URL)
@@ -303,7 +312,7 @@ refuses a draft over 2000 characters or one that doesn't start with the sentence
 device records are sandbox test data. Once a response is sent, the draft can't change.
 
 Writes (`PUT /api/policies`, `PUT /api/drafts/{id}`, `POST /api/policies/preview`,
-`POST /api/submissions/{id}`) accept JSON only, from this app's own pages (a foreign `Origin` is
+`POST /api/submissions/{id}`, `POST /api/attachments/{id}/{index}/describe`) accept JSON only, from this app's own pages (a foreign `Origin` is
 refused), and like every non-webhook route are local-only. Only `POST /api/submissions/{id}` calls
 PayPal.
 
