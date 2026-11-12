@@ -4,6 +4,8 @@ An AI agent that recommends whether to defend or settle PayPal disputes.
 The agent recommends; nothing is sent to PayPal until the merchant approves. Autopilot preview never sends anything.
 This repository only proves that the real PayPal sandbox dispute flow works.
 
+Small sellers have days to answer a PayPal dispute and often don’t know what evidence to send.
+
 ## How it works
 
 1. A customer files a dispute in the PayPal sandbox.
@@ -396,3 +398,5 @@ the audit and Activity logs.
 - **Partial-refund offers** for inquiry-stage disputes (`make-offer`); not built.
 - **AI-derived evidence facts** (for example from buyer attachments) counted in the recommendation only after the merchant confirms them.
 - **A pilot with a real merchant**, using its own shipment and checkout records instead of simulated ones.
+
+Licence: MIT
