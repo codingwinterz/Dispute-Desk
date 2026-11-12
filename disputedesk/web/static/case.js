@@ -16,6 +16,9 @@
   let caseHistory = [];      // earlier decisions for this dispute (newest first), from GET /api/decisions/{id}
   let caseEvents = [];       // simulated merchant events imported for this dispute
   let autopilotAudit = [];   // Autopilot preview audit entries (empty in demo and scratch modes)
+  let imageDescribed = [];   // when a buyer image was described by AI (timestamps only; live mode only)
+  const describeResults = new Map();  // attachment index -> last shown AI description (kept across re-renders)
+  let describePending = false;
   let autopilotCtrl = null;
   let graph3d = null;        // live three.js view; disposed before every re-render and on leaving
   let pendingGraph = null;   // a 3D view to mount once its container is in the page
@@ -601,6 +604,7 @@
       ...caseEvents.map((e) => [e.received_at, `Merchant event received: ${String(e.status).toLowerCase().replaceAll("_", " ")} scan `
         + (DD.mode.demo ? `(${RECORDED_EVENT})` : "(simulated)"), "event"]),
       ...(!DD.mode.demo && !DD.mode.scratch ? autopilotAudit.map((e) => [e.created_at, e.message, e.kind === "failed" ? "failed" : "event"]) : []),
+      ...(!DD.mode.demo && !DD.mode.scratch ? imageDescribed.map((e) => [e.created_at, "Buyer image described by AI (advisory)", "event"]) : []),
       [rec && rec.created_at, rec ? (rec.status === "ok"
         ? (afterEvent ? `Re-analyzed after the merchant event: ${outcome(rec)}` : `Analyzed by the agent: ${outcome(rec)}`)
         : "Analysis failed") : "", rec && rec.status !== "ok" ? "failed" : ""],
@@ -651,7 +655,8 @@
       if (!a.available) return el("li", { class: "attachment unavailable" }, el("span", { class: "hint", text: "Buyer attachment, not available to download" }));
       const img = el("img", { src: `/api/attachments/${encodeURIComponent(disputeId)}/${a.index}`, alt: ATTACHMENT_LABEL,
         loading: "lazy", decoding: "async", referrerpolicy: "no-referrer" });
-      const item = el("li", { class: "attachment" }, img, el("span", { class: "cap", text: ATTACHMENT_LABEL }));
+      const item = el("li", { class: "attachment" }, img, el("span", { class: "cap", text: ATTACHMENT_LABEL }),
+        describeControl(disputeId, a.index));
       img.addEventListener("error", () => img.replaceWith(el("span", { class: "hint", text: "Buyer attachment, could not be loaded from PayPal." })), { once: true });
       return item;
     };
@@ -663,6 +668,48 @@
 
   function disposeGraph() {
     if (graph3d) { graph3d.dispose(); graph3d = null; }
+  }
+
+  // "Describe with AI" (live mode only): an advisory description of one buyer image, on click only.
+  // Everything is set with textContent; the model's words and the image's text are untrusted.
+  const DESCRIBE_LABEL = "AI description of the buyer's image. Unverified. Not used in the recommendation.";
+  const RELEVANCE = { shows_item: "Appears to show the item, a package, a label or a screenshot",
+                      unrelated: "Appears unrelated to the item", unclear: "Unclear what it shows" };
+  function describeView(r) {
+    if (r.error) return el("p", { class: "hint", text: r.error });
+    const quoted = (Array.isArray(r.visible_text) ? r.visible_text : []).filter((t) => typeof t === "string");
+    return el("div", { class: "image-description" },
+      el("p", { class: "cap", text: DESCRIBE_LABEL }),
+      el("p", { text: String(r.description) }),
+      el("p", { class: "hint", text: RELEVANCE[r.relevance] || RELEVANCE.unclear }),
+      quoted.length ? el("p", { class: "hint", text: "Text visible in the image (untrusted, as written):" }) : null,
+      quoted.length ? el("ul", { class: "visible-text" }, ...quoted.map((t) => el("li", {}, el("q", { text: t })))) : null);
+  }
+  function describeControl(disputeId, index) {
+    if (DD.mode.demo || DD.mode.scratch) return null;
+    const out = el("div", { "aria-live": "polite" });
+    if (describeResults.has(index)) out.append(describeView(describeResults.get(index)));
+    const btn = el("button", { type: "button", class: "secondary small", text: "Describe with AI" });
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      describePending = true;
+      out.replaceChildren(el("p", { class: "hint", text: "Describing the image..." }));
+      let result;
+      try {
+        const resp = await fetch(`/api/attachments/${encodeURIComponent(disputeId)}/${index}/describe`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", cache: "no-store" });
+        const body = await resp.json().catch(() => null);
+        result = resp.ok && body && typeof body.description === "string" ? body
+          : { error: body && typeof body.message === "string" ? body.message : "Couldn't describe the image." };
+      } catch {
+        result = { error: "Couldn't reach the DisputeDesk server." };
+      }
+      describeResults.set(index, result);
+      out.replaceChildren(describeView(result));
+      btn.disabled = false;
+      describePending = false;
+    });
+    return el("div", { class: "describe" }, btn, out);
   }
 
   function mountPendingGraph() {
@@ -708,12 +755,13 @@
     const key = JSON.stringify(body);
     if (key === lastKey) return; // nothing changed; keep scroll position and any open anchor
     const qaFocused = document.activeElement && document.activeElement.id === "qa-question";
-    if (editorDirty || dialogOpen || qaState.pending || qaFocused) return;  // never replace unsaved edits, an open dialog, or an active question
+    if (editorDirty || dialogOpen || qaState.pending || qaFocused || describePending) return;  // never replace unsaved edits, an open dialog, or an active question
     lastKey = key;
     const { dispute, decision, draft, submit } = body;
     caseHistory = body.history || [];
     caseEvents = body.events || [];
     autopilotAudit = (!DD.mode.demo && !DD.mode.scratch) ? (body.autopilot_audit || []) : [];
+    imageDescribed = (!DD.mode.demo && !DD.mode.scratch) ? (body.image_descriptions || []) : [];
     // Hierarchy: 1) decision and risk (full width, with the timeline), 2) reasons beside the evidence
     // path, 3) draft and approval. Same panels as before; only their placement changes.
     const panels = decisionPanels(dispute, decision, draft, submit).filter(Boolean);

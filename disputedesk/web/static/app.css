@@ -678,6 +678,11 @@ button:disabled { cursor: not-allowed; }
 .attachment { display: grid; gap: 6px; align-content: start; }
 .attachment img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-2); }
 .attachment.unavailable { padding: 10px; border: 1px dashed var(--border); border-radius: var(--r-md); }
+/* Advisory AI description under a thumbnail (live mode only). */
+.attachment .describe { display: grid; gap: 6px; justify-items: start; }
+.image-description { display: grid; gap: 4px; overflow-wrap: anywhere; }
+.image-description p { margin: 0; }
+.visible-text { margin: 0; padding-left: 18px; }
 
 @media (max-width: 900px) {
   h1 { font-size: 40px; }
